@@ -94,6 +94,30 @@ python osm_to_connectiq.py exported_file.json
 
 The script will parse all holes, match features to the correct holes, simplify polygons, convert coordinates to integers and output a course JSON file.
 
+#### Output Format:
+
+```json
+{
+  "name": "Course Name",
+  "center": [lat, lon],
+  "par": 72,
+  "holes": [
+    {
+      "num": 1,
+      "par": 4,
+      "hcp": 10,
+      "dist": 305,
+      "tee": [lat, lon],
+      "pin": [lat, lon],
+      "path": [[lat, lon], ...],
+      "green": [[lat, lon], ...],
+      "fairways": [[[lat, lon], ...], ...],
+      "bunkers": [[lat, lon], ...],
+      "water": [[[lat, lon], ...], ...]
+    }
+  ]
+}
+```
 ### 4. Register the Course in the App
 Open `resources/jsonData/` and add the JSON file
 
