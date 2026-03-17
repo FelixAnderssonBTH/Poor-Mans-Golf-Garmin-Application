@@ -1,6 +1,4 @@
 <!-- Declares which course files are available as resources -->
 <resources>
-    <jsonData id="course_annebo_test" filename="course_annebo_test.json" />
     <jsonData id="course_trummenas" filename="course_trummenas.json" />
-    <jsonData id="course_carlskrona" filename="course_carlskrona.json" />
 </resources>
