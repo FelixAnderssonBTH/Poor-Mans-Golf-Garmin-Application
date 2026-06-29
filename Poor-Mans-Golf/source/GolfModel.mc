@@ -27,6 +27,9 @@ class GolfModel {
     // FIT fields for per-hole score in activity file
     var holeScoreField;
     var holeNumField;
+    var holeParField;
+    var courseNameField;
+    var holeNumRecordField;
     // FIT record fields for shot positions (logged every second, updated on stroke)
     var shotLatField;
     var shotLonField;
@@ -47,49 +50,63 @@ class GolfModel {
     function startRecording() as Void {
         if (session == null) {
             session = ActivityRecording.createSession({
-                :name => "Golf",
+                :name => "Golf @ " + courseData.name,
                 :sport => ActivityRecording.SPORT_GOLF,
                 :subSport => ActivityRecording.SUB_SPORT_GENERIC
             });
 
-            // Per-lap fields (written when saving)
+            // Per-lap fields (one lap per hole transition)
             holeScoreField = session.createField(
-                "hole_score",
-                0,
+                "hole_score", 0,
                 FitContributor.DATA_TYPE_UINT8,
                 {:mesgType => FitContributor.MESG_TYPE_LAP, :units => "strokes"}
             );
             holeNumField = session.createField(
-                "hole_num",
-                1,
+                "hole_num", 1,
                 FitContributor.DATA_TYPE_UINT8,
                 {:mesgType => FitContributor.MESG_TYPE_LAP}
             );
+            holeParField = session.createField(
+                "hole_par", 5,
+                FitContributor.DATA_TYPE_UINT8,
+                {:mesgType => FitContributor.MESG_TYPE_LAP, :units => "strokes"}
+            );
+
+            // Session-level: course name (written once)
+            courseNameField = session.createField(
+                "course_name", 6,
+                FitContributor.DATA_TYPE_STRING,
+                {:mesgType => FitContributor.MESG_TYPE_SESSION, :count => 32}
+            );
+            courseNameField.setData(courseData.name);
 
             // Per-record fields (updated on each stroke, logged every second)
             shotLatField = session.createField(
-                "shot_lat",
-                2,
+                "shot_lat", 2,
                 FitContributor.DATA_TYPE_SINT32,
                 {:mesgType => FitContributor.MESG_TYPE_RECORD, :units => "deg*1e5"}
             );
             shotLonField = session.createField(
-                "shot_lon",
-                3,
+                "shot_lon", 3,
                 FitContributor.DATA_TYPE_SINT32,
                 {:mesgType => FitContributor.MESG_TYPE_RECORD, :units => "deg*1e5"}
             );
             shotNumField = session.createField(
-                "shot_num",
-                4,
+                "shot_num", 4,
                 FitContributor.DATA_TYPE_UINT8,
                 {:mesgType => FitContributor.MESG_TYPE_RECORD}
             );
 
-            // Initialize to 0
+            holeNumRecordField = session.createField(
+                "rec_hole_num", 7,
+                FitContributor.DATA_TYPE_UINT8,
+                {:mesgType => FitContributor.MESG_TYPE_RECORD}
+            );
+
             shotLatField.setData(0);
             shotLonField.setData(0);
             shotNumField.setData(0);
+            holeNumRecordField.setData(courseData.holes[currentHole]["num"]);
 
             session.start();
         }
@@ -97,17 +114,10 @@ class GolfModel {
 
     function saveAndStop() as Void {
         if (session != null && session.isRecording()) {
-            // Write all hole scores as FIT laps at the end
-            if (holeScoreField != null && holeNumField != null) {
-                for (var i = 0; i < courseData.numHoles; i++) {
-                    if (scores[i] > 0) {
-                        var hole = courseData.holes[i];
-                        holeNumField.setData(hole["num"]);
-                        holeScoreField.setData(scores[i]);
-                        session.addLap();
-                    }
-                }
-            }
+            // Final lap for whichever hole the player ends on (covers the case
+            // where they stop without swiping past the last hole).
+            _writeLapForHole(currentHole);
+
             session.stop();
             session.save();
             session = null;
@@ -157,6 +167,9 @@ class GolfModel {
                 shotLatField.setData(playerLat);
                 shotLonField.setData(playerLon);
                 shotNumField.setData(scores[currentHole]);
+                if (holeNumRecordField != null) {
+                    holeNumRecordField.setData(courseData.holes[currentHole]["num"]);
+                }
             }
         }
 
@@ -215,12 +228,34 @@ class GolfModel {
         return balls;
     }
 
+    hidden function _writeLapForHole(holeIdx as Number) as Void {
+        if (session == null || !session.isRecording()) { return; }
+        if (scores[holeIdx] <= 0) { return; }
+        if (holeNumField == null || holeScoreField == null) { return; }
+
+        var hole = courseData.holes[holeIdx];
+        holeNumField.setData(hole["num"]);
+        holeScoreField.setData(scores[holeIdx]);
+        if (holeParField != null && hole["par"] != null) {
+            holeParField.setData(hole["par"]);
+        }
+        session.addLap();
+    }
+
     function nextHole() as Void {
+        _writeLapForHole(currentHole);  // NEW — capture lap before moving
         if (currentHole < courseData.numHoles - 1) {
             currentHole = currentHole + 1;
+            if (holeNumRecordField != null) {
+                holeNumRecordField.setData(courseData.holes[currentHole]["num"]);
+            }
         } else {
             roundFinished = true;
+            if (holeNumRecordField != null) {
+                holeNumRecordField.setData(0);
+            }
         }
+
         if (playerLat != 0) {
             var hole = courseData.holes[currentHole];
             distToPin = _calcDistance(playerLat, playerLon, hole["pin"][0], hole["pin"][1]);
@@ -229,10 +264,18 @@ class GolfModel {
     }
 
     function prevHole() as Void {
+        _writeLapForHole(currentHole);  // capture lap before moving
         if (roundFinished) {
             roundFinished = false;
+            // returning from summary — re-tag records with the current (last) hole
+            if (holeNumRecordField != null) {
+                holeNumRecordField.setData(courseData.holes[currentHole]["num"]);
+            }
         } else if (currentHole > 0) {
             currentHole = currentHole - 1;
+            if (holeNumRecordField != null) {
+                holeNumRecordField.setData(courseData.holes[currentHole]["num"]);
+            }
         }
         if (playerLat != 0) {
             var hole = courseData.holes[currentHole];
@@ -325,4 +368,6 @@ class GolfModel {
 
         return Math.sqrt(dx * dx + dy * dy);
     }
+
+    
 }

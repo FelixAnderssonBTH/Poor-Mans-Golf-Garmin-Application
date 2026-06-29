@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Round {{ rnd['id'] }} — {{ rnd['start_time'] }}</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root { --bg: #1a3a1a; --fg: #e8f1e8; --muted: #8aa68a; --accent: #40c040; --card: #234a23; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px system-ui, sans-serif; background: var(--bg); color: var(--fg); display: flex; flex-direction: column; }
+  header { padding: 12px 20px; background: #0f240f; border-bottom: 1px solid #305030; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 18px; }
+  header .meta { color: var(--muted); font-size: 13px; }
+  header a { color: var(--accent); text-decoration: none; font-size: 13px; }
+  .container { display: flex; flex: 1; min-height: 0; }
+  #map { flex: 1; background: #0a1a0a; }
+  aside { width: 240px; background: var(--card); padding: 16px; overflow-y: auto; }
+  aside h2 { margin: 0 0 10px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #305030; }
+  .stat:last-child { border: 0; }
+  .stat .v { font-weight: 600; }
+  .holes { margin-top: 14px; }
+  .hole { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; }
+  .hole:hover { color: var(--accent); }
+  .hole .dot { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 14px; }
+  .hole .num { flex: 1; }
+  .hole .strokes { color: var(--muted); }
+  .hole.hidden { opacity: 0.35; }
+  .controls { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .controls label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .leaflet-popup-content { font: 13px system-ui, sans-serif; }
+  .shot-marker {
+    background: #fff; border-radius: 50%; width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 11px; color: #000;
+    border: 2px solid #000; box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Round {{ rnd['id'] }}</h1>
+  <div class="meta">
+    {{ rnd['start_time'] }}
+    {% if rnd['course_name'] %} · {{ rnd['course_name'] }}{% endif %}
+  </div>
+  <a href="{{ url_for('index') }}">← All rounds</a>
+</header>
+
+<div class="container">
+  <div id="map"></div>
+  <aside>
+    <h2>Round Stats</h2>
+    <div class="stat"><span>Duration</span><span class="v">{{ rnd['time_seconds']|duration }}</span></div>
+    <div class="stat"><span>Distance</span><span class="v">{{ rnd['distance_m']|km }}</span></div>
+    <div class="stat"><span>Calories</span><span class="v">{{ rnd['calories'] or '—' }}</span></div>
+    {% set total_strokes = holes|map(attribute='strokes')|select|sum %}
+    {% set total_par = holes|map(attribute='par')|select|sum %}
+    {% set total_to_par = total_strokes - total_par if total_par else None %}
+    <div class="stat"><span>Total shots</span><span class="v">{{ total_strokes }}</span></div>
+    {% if total_par %}
+      <div class="stat"><span>Course par</span><span class="v">{{ total_par }}</span></div>
+      <div class="stat"><span>Score</span><span class="v">
+        {% if total_to_par == 0 %}E
+        {% elif total_to_par > 0 %}+{{ total_to_par }}
+        {% else %}{{ total_to_par }}{% endif %}
+      </span></div>
+    {% endif %}
+    <div class="stat"><span>Holes played</span><span class="v">{{ holes|length }}</span></div>
+    {% if rnd['notes'] %}<div class="stat"><span>Notes</span><span class="v">{{ rnd['notes'] }}</span></div>{% endif %}
+
+    <div class="controls">
+      <label><input type="checkbox" id="toggle-track" checked> Show walking track</label>
+    </div>
+
+    <div class="holes">
+      <h2>Holes (click to toggle)</h2>
+      <div id="hole-list"></div>
+    </div>
+  </aside>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+const ROUND_ID = {{ rnd['id'] }};
+
+// Color per hole — HSL hue rotation over 18 holes
+function holeColor(h) {
+  return `hsl(${(h - 1) * (360 / 18)}, 70%, 50%)`;
+}
+
+const map = L.map('map');
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '© OpenStreetMap'
+}).addTo(map);
+
+const holeLayers = {};   // hole_num -> L.layerGroup
+const visibleHoles = new Set();
+let trackLayer = null;
+
+fetch(`/round/${ROUND_ID}/data`).then(r => r.json()).then(data => {
+  // Walking track
+  if (data.track.length) {
+    const pts = data.track.map(p => [p.lat, p.lon]);
+    trackLayer = L.polyline(pts, { color: '#aaaaaa', weight: 2, opacity: 0.6 }).addTo(map);
+  }
+
+  // Group shots by hole
+  const byHole = {};
+  for (const s of data.shots) {
+    (byHole[s.hole_num] = byHole[s.hole_num] || []).push(s);
+  }
+
+  for (const hole of Object.keys(byHole).map(Number).sort((a, b) => a - b)) {
+    const color = holeColor(hole);
+    const layer = L.layerGroup();
+    const shotPts = [];
+
+    for (const s of byHole[hole]) {
+      shotPts.push([s.lat, s.lon]);
+
+      const icon = L.divIcon({
+        className: '',
+        html: `<div class="shot-marker" style="background:${color}">${s.shot_num}</div>`,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11]
+      });
+      L.marker([s.lat, s.lon], { icon })
+        .bindPopup(`<b>Hole ${hole}, Shot ${s.shot_num}</b><br>${s.time}<br>${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`)
+        .addTo(layer);
+    }
+
+    // Faint line connecting shots in order
+    if (shotPts.length > 1) {
+      L.polyline(shotPts, { color, weight: 2, opacity: 0.5, dashArray: '4,4' }).addTo(layer);
+    }
+
+    layer.addTo(map);
+    holeLayers[hole] = layer;
+    visibleHoles.add(hole);
+  }
+
+  // Fit bounds to everything visible
+  const allPts = data.shots.map(s => [s.lat, s.lon])
+                 .concat(data.track.map(p => [p.lat, p.lon]));
+  if (allPts.length) {
+    map.fitBounds(L.latLngBounds(allPts).pad(0.1));
+  } else {
+    map.setView([0, 0], 2);
+  }
+
+  // Hole list in sidebar
+  const list = document.getElementById('hole-list');
+  for (const h of data.holes) {
+    const row = document.createElement('div');
+    row.className = 'hole';
+    row.dataset.hole = h.hole_num;
+    let scoreLabel;
+    if (h.par != null && h.strokes != null) {
+      const diff = h.to_par;
+      const sign = diff === 0 ? 'E' : (diff > 0 ? `+${diff}` : `${diff}`);
+      scoreLabel = `${h.strokes}/${h.par} (${sign})`;
+    } else {
+      scoreLabel = `${h.strokes ?? '?'} shots`;
+    }
+    row.innerHTML = `
+      <span class="dot" style="background:${holeColor(h.hole_num)}"></span>
+      <span class="num">Hole ${h.hole_num}</span>
+      <span class="strokes">${scoreLabel}</span>`;
+    row.addEventListener('click', () => toggleHole(h.hole_num, row));
+    list.appendChild(row);
+  }
+});
+
+function toggleHole(h, row) {
+  const layer = holeLayers[h];
+  if (!layer) return;
+  if (visibleHoles.has(h)) {
+    map.removeLayer(layer);
+    visibleHoles.delete(h);
+    row.classList.add('hidden');
+  } else {
+    layer.addTo(map);
+    visibleHoles.add(h);
+    row.classList.remove('hidden');
+  }
+}
+
+document.getElementById('toggle-track').addEventListener('change', e => {
+  if (!trackLayer) return;
+  if (e.target.checked) trackLayer.addTo(map);
+  else map.removeLayer(trackLayer);
+});
+</script>
+</body>
+</html>

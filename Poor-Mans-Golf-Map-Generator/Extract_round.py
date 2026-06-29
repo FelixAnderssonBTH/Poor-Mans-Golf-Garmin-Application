@@ -7,10 +7,12 @@ Usage:
     python extract_round.py <activity.fit> [output.json]
 
 Extracts:
-    - Per-hole scores from lap data
+    - Per-hole scores AND par from lap data
+    - Course name from session data
     - Shot positions from record data
     - GPS track points
     - Total time, distance, calories
+
 """
 
 import sys
@@ -46,8 +48,14 @@ def extract_round(fit_path):
                 round_data["activity"]["sport"] = field.value
             elif field.name == "start_time":
                 round_data["activity"]["start_time"] = str(field.value)
+            elif field.name == "course_name" and field.value is not None:
+                # Custom field written by the watch app
+                round_data["activity"]["course_name"] = (
+                    field.value.rstrip("\x00").strip() if isinstance(field.value, str) else field.value
+                )
 
-    # Extract laps (one per hole)
+    # Extract laps
+    holes_by_num = {}
     for record in fitfile.get_messages("lap"):
         hole = {}
         for field in record.fields:
@@ -55,11 +63,25 @@ def extract_round(fit_path):
                 hole["hole"] = field.value
             elif field.name == "hole_score" and field.value is not None:
                 hole["strokes"] = field.value
-            elif field.name == "total_elapsed_time":
+            elif field.name == "hole_par" and field.value is not None:
+                hole["par"] = field.value
+            elif field.name == "total_elapsed_time" and field.value is not None:
                 hole["time_seconds"] = field.value
 
-        if "hole" in hole or "strokes" in hole:
-            round_data["holes"].append(hole)
+        if "hole" not in hole:
+            continue
+        hn = hole["hole"]
+        prev = holes_by_num.get(hn)
+        if prev is None:
+            holes_by_num[hn] = hole
+        else:
+            # Sum durations across visits, keep latest score/par
+            t_prev = prev.get("time_seconds") or 0
+            t_now = hole.get("time_seconds") or 0
+            hole["time_seconds"] = t_prev + t_now
+            holes_by_num[hn] = hole
+
+    round_data["holes"] = [holes_by_num[k] for k in sorted(holes_by_num.keys())]
 
     # Extract records for shot positions and GPS track
     last_shot_num = 0
@@ -68,6 +90,7 @@ def extract_round(fit_path):
         shot_lat = None
         shot_lon = None
         shot_num = None
+        rec_hole_num = None
 
         for field in record.fields:
             if field.name == "position_lat" and field.value is not None:
@@ -84,6 +107,8 @@ def extract_round(fit_path):
                 shot_lon = field.value
             elif field.name == "shot_num" and field.value is not None:
                 shot_num = field.value
+            elif field.name == "rec_hole_num" and field.value is not None:
+                rec_hole_num = field.value
 
         # Track point
         if "lat" in point and "lon" in point:
@@ -92,12 +117,16 @@ def extract_round(fit_path):
         # New shot detected (shot_num changed)
         if shot_num is not None and shot_num != last_shot_num and shot_num > 0:
             if shot_lat is not None and shot_lon is not None:
-                round_data["shots"].append({
+                shot = {
                     "shot_num": shot_num,
                     "lat": shot_lat / 100000.0,
                     "lon": shot_lon / 100000.0,
                     "time": point.get("time", "")
-                })
+                }
+
+                if rec_hole_num is not None and rec_hole_num > 0:
+                    shot["hole"] = rec_hole_num
+                round_data["shots"].append(shot)
             last_shot_num = shot_num
 
     return round_data
@@ -116,6 +145,8 @@ def main():
 
     print(f"\nRound Summary:")
     act = data["activity"]
+    if "course_name" in act:
+        print(f"  Course: {act['course_name']}")
     if "start_time" in act:
         print(f"  Start: {act['start_time']}")
     if "time_seconds" in act:
@@ -126,13 +157,22 @@ def main():
 
     print(f"\nHoles: {len(data['holes'])}")
     total_strokes = 0
+    total_par = 0
     for h in data["holes"]:
         num = h.get("hole", "?")
         strokes = h.get("strokes", "?")
+        par = h.get("par", "?")
         if isinstance(strokes, int):
             total_strokes += strokes
-        print(f"  Hole {num:>2}: {strokes} strokes")
-    print(f"  Total: {total_strokes} strokes")
+        if isinstance(par, int):
+            total_par += par
+        print(f"  Hole {num:>2}: par {par}, {strokes} strokes")
+    if total_par:
+        diff = total_strokes - total_par
+        sign = "+" if diff > 0 else ""
+        print(f"  Total: {total_strokes} strokes (par {total_par}, {sign}{diff})")
+    else:
+        print(f"  Total: {total_strokes} strokes")
 
     print(f"\nShots recorded: {len(data['shots'])}")
     for s in data["shots"]:

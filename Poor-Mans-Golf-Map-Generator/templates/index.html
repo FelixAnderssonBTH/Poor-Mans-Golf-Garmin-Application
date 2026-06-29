@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Golf Round Archive</title>
+<style>
+  :root { --bg: #1a3a1a; --fg: #e8f1e8; --muted: #8aa68a; --accent: #40c040; --danger: #d05050; --card: #234a23; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  header { padding: 16px 24px; background: #0f240f; border-bottom: 1px solid #305030; }
+  h1 { margin: 0; font-size: 20px; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px; }
+  .card { background: var(--card); border-radius: 8px; padding: 18px; margin-bottom: 20px; }
+  .card h2 { margin: 0 0 12px; font-size: 16px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  form .row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  input[type=text], input[type=file] { background: #0f240f; border: 1px solid #305030; color: var(--fg); padding: 8px 10px; border-radius: 4px; font: inherit; }
+  input[type=text] { min-width: 220px; }
+  button { background: var(--accent); color: #0f240f; border: 0; padding: 8px 16px; border-radius: 4px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.danger { background: var(--danger); color: #fff; padding: 4px 10px; font-size: 13px; }
+  button.danger:hover { background: #e06060; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid #305030; }
+  th { color: var(--muted); font-weight: 500; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
+  tr:hover td { background: #2a542a; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .flash { padding: 10px 14px; border-radius: 4px; margin-bottom: 14px; }
+  .flash.ok { background: #2a542a; }
+  .flash.error { background: #5a2020; }
+  .empty { color: var(--muted); padding: 20px 0; text-align: center; }
+</style>
+</head>
+<body>
+<header><h1>⛳ Golf Round Archive</h1></header>
+<main>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="flash {{ cat }}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <section class="card">
+    <h2>Import a Round</h2>
+    <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
+      <div class="row">
+        <input type="file" name="file" accept=".json" required>
+        <input type="text" name="course_name" placeholder="Course name (optional)">
+        <input type="text" name="notes" placeholder="Notes (optional)">
+        <button type="submit">Import</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Rounds ({{ rounds|length }})</h2>
+    {% if rounds %}
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Course</th>
+          <th>Holes</th>
+          <th>Shots</th>
+          <th>Duration</th>
+          <th>Distance</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rounds %}
+        <tr>
+          <td><a href="{{ url_for('view_round', round_id=r['id']) }}">{{ r['start_time'] }}</a></td>
+          <td>{{ r['course_name'] or '—' }}</td>
+          <td>{{ r['holes_played'] or 0 }}</td>
+          <td>{{ r['total_shots'] }}</td>
+          <td>{{ r['time_seconds']|duration }}</td>
+          <td>{{ r['distance_m']|km }}</td>
+          <td>
+            <form action="{{ url_for('delete_round', round_id=r['id']) }}" method="post"
+                  onsubmit="return confirm('Delete this round?')" style="margin:0">
+              <button class="danger" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <div class="empty">No rounds yet — import a round JSON from <code>extract_round.py</code> above.</div>
+    {% endif %}
+  </section>
+</main>
+</body>
+</html>
