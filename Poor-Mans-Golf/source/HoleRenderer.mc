@@ -67,14 +67,14 @@ class HoleRenderer {
         var pp = _gpsToRotated(pin[0], pin[1]);
         minX = _minF(minX, pp[0]); maxX = _maxF(maxX, pp[0]);
         minY = _minF(minY, pp[1]); maxY = _maxF(maxY, pp[1]);
-
-        var path = hole["path"];
-        for (var i = 0; i < path.size(); i++) {
-            var rp = _gpsToRotated(path[i][0], path[i][1]);
-            minX = _minF(minX, rp[0]); maxX = _maxF(maxX, rp[0]);
-            minY = _minF(minY, rp[1]); maxY = _maxF(maxY, rp[1]);
+        if (hole.hasKey("path")) {
+            var path = hole["path"];
+            for (var i = 0; i < path.size(); i++) {
+                var rp = _gpsToRotated(path[i][0], path[i][1]);
+                minX = _minF(minX, rp[0]); maxX = _maxF(maxX, rp[0]);
+                minY = _minF(minY, rp[1]); maxY = _maxF(maxY, rp[1]);
+            }
         }
-
         var rangeX = maxX - minX;
         var rangeY = maxY - minY;
         if (rangeX < 30.0) { rangeX = 30.0; }
@@ -134,7 +134,11 @@ class HoleRenderer {
             _drawBunkers(dc, hole["bk"]);
         }
 
-        _drawPath(dc, hole["path"]);
+        if (hole.hasKey("path")) {
+            _drawPath(dc, hole["path"]);
+        }else {
+            _drawPath(dc, [hole["tee"], hole["pin"]]);
+        }
 
         // Draw ball positions
         if (balls != null) {
