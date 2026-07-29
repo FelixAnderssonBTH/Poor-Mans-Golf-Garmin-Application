@@ -24,12 +24,8 @@ def index():
     selected_course = (request.args.get("course") or "").strip() or None
     rounds = db.list_rounds(course_name=selected_course)
     courses = db.list_courses()
-    return render_template(
-        "index.html",
-        rounds=rounds,
-        courses=courses,
-        selected_course=selected_course,
-    )
+    return render_template("index.html", rounds=rounds, courses=courses,
+                           selected_course=selected_course)
 
 
 @app.route("/upload", methods=["POST"])
@@ -86,6 +82,52 @@ def delete_round(round_id):
     db.delete_round(round_id)
     flash("Round deleted", "ok")
     return redirect(url_for("index"))
+
+
+# ---------------------------------------------------------------------------
+# Shot heatmap by hole (across all rounds of a course)
+# ---------------------------------------------------------------------------
+
+@app.route("/course/<course_name>/holes")
+def course_holes(course_name):
+    """Hole picker for a course — which holes have data and how much."""
+    holes = db.get_course_holes(course_name)
+    if not holes:
+        abort(404)
+    # Default to the first hole with data
+    return render_template(
+        "hole_heatmap.html",
+        course_name=course_name,
+        holes=holes,
+        selected_hole=holes[0]["hole_num"],
+    )
+
+
+@app.route("/course/<course_name>/hole/<int:hole_num>")
+def course_hole(course_name, hole_num):
+    """Heatmap page focused on one hole."""
+    holes = db.get_course_holes(course_name)
+    if not holes:
+        abort(404)
+    return render_template(
+        "hole_heatmap.html",
+        course_name=course_name,
+        holes=holes,
+        selected_hole=hole_num,
+    )
+
+
+@app.route("/course/<course_name>/hole/<int:hole_num>/data")
+def course_hole_data(course_name, hole_num):
+    """JSON: every shot on this hole across all rounds."""
+    shots = db.get_hole_shots_across_rounds(course_name, hole_num)
+    scores = db.get_hole_scores_across_rounds(course_name, hole_num)
+    return jsonify({
+        "course_name": course_name,
+        "hole_num": hole_num,
+        "shots": shots,
+        "scores": scores,
+    })
 
 
 # Convenience filters for templates

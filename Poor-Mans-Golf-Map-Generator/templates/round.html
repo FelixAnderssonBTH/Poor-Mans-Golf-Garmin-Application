@@ -14,9 +14,17 @@
   header h1 { margin: 0; font-size: 18px; }
   header .meta { color: var(--muted); font-size: 13px; }
   header a { color: var(--accent); text-decoration: none; font-size: 13px; }
+  .holebar { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 20px; background: #143014; border-bottom: 1px solid #305030; }
+  .holebar button {
+    min-width: 40px; padding: 5px 8px; border-radius: 6px;
+    background: #0f240f; color: var(--fg); cursor: pointer;
+    border: 1px solid #305030; font: inherit; font-size: 13px; line-height: 1.2;
+  }
+  .holebar button:hover { border-color: var(--accent); }
+  .holebar button.active { background: var(--accent); color: #0f240f; border-color: var(--accent); font-weight: 700; }
   .container { display: flex; flex: 1; min-height: 0; }
   #map { flex: 1; background: #0a1a0a; }
-  aside { width: 240px; background: var(--card); padding: 16px; overflow-y: auto; }
+  aside { width: 250px; background: var(--card); padding: 16px; overflow-y: auto; }
   aside h2 { margin: 0 0 10px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
   .stat { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #305030; }
   .stat:last-child { border: 0; }
@@ -33,6 +41,11 @@
   .hole.hidden { opacity: 0.35; }
   .controls { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
   .controls label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .shot-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #305030; font-size: 13px; }
+  .shot-row .lbl { display: flex; align-items: center; gap: 6px; }
+  .swatch-inline { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1px solid #000; vertical-align: middle; }
+  .empty { color: var(--muted); padding: 12px 0; }
+  .section { margin-top: 16px; }
   .leaflet-popup-content { font: 13px system-ui, sans-serif; }
   .shot-marker {
     background: #fff; border-radius: 50%; width: 22px; height: 22px;
@@ -52,40 +65,59 @@
   <a href="{{ url_for('index') }}">← All rounds</a>
 </header>
 
+<div class="holebar" id="holebar">
+  <button data-hole="all" class="active">All</button>
+</div>
+
 <div class="container">
   <div id="map"></div>
   <aside>
-    <h2>Round Stats</h2>
-    <div class="stat"><span>Duration</span><span class="v">{{ rnd['time_seconds']|duration }}</span></div>
-    <div class="stat"><span>Distance</span><span class="v">{{ rnd['distance_m']|km }}</span></div>
-    <div class="stat"><span>Calories</span><span class="v">{{ rnd['calories'] or '—' }}</span></div>
-    {% set total_strokes = holes|map(attribute='strokes')|select|sum %}
-    {% set total_par = holes|map(attribute='par')|select|sum %}
-    {% set total_to_par = total_strokes - total_par if total_par else None %}
-    <div class="stat"><span>Total shots</span><span class="v">{{ total_strokes }}</span></div>
-    {% if total_par %}
-      <div class="stat"><span>Course par</span><span class="v">{{ total_par }}</span></div>
-      <div class="stat"><span>Score</span><span class="v">
-        {% if total_to_par == 0 %}E
-        {% elif total_to_par > 0 %}+{{ total_to_par }}
-        {% else %}{{ total_to_par }}{% endif %}
-      </span></div>
-    {% endif %}
-    <div class="stat"><span>Holes played</span><span class="v">{{ holes|length }}</span></div>
-    {% if rnd['notes'] %}
-    <div class="notes">
-      <span class="label">Notes:</span>
-      <span class="body">{{ rnd['notes'] }}</span>
-    </div>
-    {% endif %}
+    <!-- Round overview (shown when "All" is selected) -->
+    <div id="round-panel">
+      <h2>Round Stats</h2>
+      <div class="stat"><span>Duration</span><span class="v">{{ rnd['time_seconds']|duration }}</span></div>
+      <div class="stat"><span>Distance</span><span class="v">{{ rnd['distance_m']|km }}</span></div>
+      <div class="stat"><span>Calories</span><span class="v">{{ rnd['calories'] or '—' }}</span></div>
+      {% set total_strokes = holes|map(attribute='strokes')|select|sum %}
+      {% set total_par = holes|map(attribute='par')|select|sum %}
+      {% set total_to_par = total_strokes - total_par if total_par else None %}
+      <div class="stat"><span>Total shots</span><span class="v">{{ total_strokes }}</span></div>
+      {% if total_par %}
+        <div class="stat"><span>Course par</span><span class="v">{{ total_par }}</span></div>
+        <div class="stat"><span>Score</span><span class="v">
+          {% if total_to_par == 0 %}E
+          {% elif total_to_par > 0 %}+{{ total_to_par }}
+          {% else %}{{ total_to_par }}{% endif %}
+        </span></div>
+      {% endif %}
+      <div class="stat"><span>Holes played</span><span class="v">{{ holes|length }}</span></div>
+      {% if rnd['notes'] %}
+      <div class="notes">
+        <span class="label">Notes:</span>
+        <span class="body">{{ rnd['notes'] }}</span>
+      </div>
+      {% endif %}
 
-    <div class="controls">
-      <label><input type="checkbox" id="toggle-track" checked> Show walking track</label>
+      <div class="controls">
+        <label><input type="checkbox" id="toggle-track" checked> Show walking track</label>
+      </div>
+
+      <div class="holes">
+        <h2>Holes (click to toggle)</h2>
+        <div id="hole-list"></div>
+      </div>
     </div>
 
-    <div class="holes">
-      <h2>Holes (click to toggle)</h2>
-      <div id="hole-list"></div>
+    <!-- Single-hole detail (shown when a hole box is selected) -->
+    <div id="hole-panel" style="display:none">
+      <h2 id="hole-title">Hole</h2>
+      <div class="stat"><span>Par</span><span class="v" id="hp-par">—</span></div>
+      <div class="stat"><span>Shots</span><span class="v" id="hp-score">—</span></div>
+      <div class="stat"><span>Score</span><span class="v" id="hp-topar">—</span></div>
+      <div class="section">
+        <h2>Shots</h2>
+        <div id="hp-shots"><div class="empty">—</div></div>
+      </div>
     </div>
   </aside>
 </div>
@@ -99,6 +131,10 @@ const ROUND_ID = {{ rnd['id'] }};
 function holeColor(h) {
   return `hsl(${(h - 1) * (360 / 18)}, 70%, 50%)`;
 }
+
+// Color per shot number (1 = tee, 2 = second, ...)
+const SHOT_COLORS = ['#e03030', '#e0a020', '#30b030', '#3080e0', '#8040e0', '#e040a0', '#20b0b0', '#909090'];
+function shotColor(n) { return SHOT_COLORS[(n - 1) % SHOT_COLORS.length]; }
 
 // Distance in meters between two [lat, lon] points (haversine)
 function distMeters(a, b) {
@@ -118,39 +154,56 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap'
 }).addTo(map);
 
-const holeLayers = {};   // hole_num -> L.layerGroup
+const holeLayers = {};       // hole_num -> L.layerGroup
 const visibleHoles = new Set();
 let trackLayer = null;
 
+let DATA = null;             // full round payload
+let SHOTS_BY_HOLE = {};      // hole_num -> [shots], each with dist_m computed
+let HOLE_META = {};          // hole_num -> {strokes, par, to_par}
+let currentSelection = 'all';
+
 fetch(`/round/${ROUND_ID}/data`).then(r => r.json()).then(data => {
+  DATA = data;
+
   // Walking track
   if (data.track.length) {
     const pts = data.track.map(p => [p.lat, p.lon]);
     trackLayer = L.polyline(pts, { color: '#aaaaaa', weight: 2, opacity: 0.6 }).addTo(map);
   }
 
-  // Group shots by hole
-  const byHole = {};
+  // Group shots by hole and compute per-shot distance (from previous shot in the hole)
   for (const s of data.shots) {
-    (byHole[s.hole_num] = byHole[s.hole_num] || []).push(s);
+    (SHOTS_BY_HOLE[s.hole_num] = SHOTS_BY_HOLE[s.hole_num] || []).push(s);
+  }
+  for (const hn of Object.keys(SHOTS_BY_HOLE)) {
+    const group = SHOTS_BY_HOLE[hn];
+    let prev = null;
+    for (const s of group) {
+      s.dist_m = prev ? distMeters([prev.lat, prev.lon], [s.lat, s.lon]) : null;
+      prev = s;
+    }
   }
 
-  for (const hole of Object.keys(byHole).map(Number).sort((a, b) => a - b)) {
+  // Hole meta from the holes summary
+  for (const h of data.holes) {
+    HOLE_META[h.hole_num] = h;
+  }
+
+  // Build map layers per hole (same overlay behavior as before)
+  for (const hole of Object.keys(SHOTS_BY_HOLE).map(Number).sort((a, b) => a - b)) {
     const color = holeColor(hole);
     const layer = L.layerGroup();
     const shotPts = [];
 
-    let prevPt = null;
-    for (const s of byHole[hole]) {
+    for (const s of SHOTS_BY_HOLE[hole]) {
       const pt = [s.lat, s.lon];
       shotPts.push(pt);
 
-      // Distance the previous shot traveled to reach this position
       let distLine = '';
-      if (prevPt) {
-        const d = distMeters(prevPt, pt);
-        const yards = d * 1.09361;
-        distLine = `<br><b>Traveled:</b> ${d.toFixed(0)} m (${yards.toFixed(0)} yd)`;
+      if (s.dist_m != null) {
+        const yards = s.dist_m * 1.09361;
+        distLine = `<br><b>Traveled:</b> ${s.dist_m.toFixed(0)} m (${yards.toFixed(0)} yd)`;
       }
 
       const icon = L.divIcon({
@@ -162,11 +215,8 @@ fetch(`/round/${ROUND_ID}/data`).then(r => r.json()).then(data => {
       L.marker(pt, { icon })
         .bindPopup(`<b>Hole ${hole}, Shot ${s.shot_num}</b><br>${s.time}<br>${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}${distLine}`)
         .addTo(layer);
-
-      prevPt = pt;
     }
 
-    // Faint line connecting shots in order
     if (shotPts.length > 1) {
       L.polyline(shotPts, { color, weight: 2, opacity: 0.5, dashArray: '4,4' }).addTo(layer);
     }
@@ -177,15 +227,9 @@ fetch(`/round/${ROUND_ID}/data`).then(r => r.json()).then(data => {
   }
 
   // Fit bounds to everything visible
-  const allPts = data.shots.map(s => [s.lat, s.lon])
-                 .concat(data.track.map(p => [p.lat, p.lon]));
-  if (allPts.length) {
-    map.fitBounds(L.latLngBounds(allPts).pad(0.1));
-  } else {
-    map.setView([0, 0], 2);
-  }
+  fitAll();
 
-  // Hole list in sidebar
+  // Hole list in sidebar (toggle overlay on/off)
   const list = document.getElementById('hole-list');
   for (const h of data.holes) {
     const row = document.createElement('div');
@@ -206,7 +250,29 @@ fetch(`/round/${ROUND_ID}/data`).then(r => r.json()).then(data => {
     row.addEventListener('click', () => toggleHole(h.hole_num, row));
     list.appendChild(row);
   }
+
+  // Build the hole picker boxes
+  const bar = document.getElementById('holebar');
+  const holeNums = Object.keys(SHOTS_BY_HOLE).map(Number).sort((a, b) => a - b);
+  for (const hn of holeNums) {
+    const btn = document.createElement('button');
+    btn.dataset.hole = hn;
+    btn.textContent = hn;
+    btn.addEventListener('click', () => selectHole(hn));
+    bar.appendChild(btn);
+  }
+  bar.querySelector('[data-hole="all"]').addEventListener('click', () => selectHole('all'));
 });
+
+function fitAll() {
+  const allPts = (DATA.shots || []).map(s => [s.lat, s.lon])
+                 .concat((DATA.track || []).map(p => [p.lat, p.lon]));
+  if (allPts.length) {
+    map.fitBounds(L.latLngBounds(allPts).pad(0.1));
+  } else {
+    map.setView([0, 0], 2);
+  }
+}
 
 function toggleHole(h, row) {
   const layer = holeLayers[h];
@@ -219,6 +285,95 @@ function toggleHole(h, row) {
     layer.addTo(map);
     visibleHoles.add(h);
     row.classList.remove('hidden');
+  }
+}
+
+// Select "all" (show overlay + round stats) or a single hole (focus + detail)
+function selectHole(sel) {
+  currentSelection = sel;
+
+  // Update active button
+  document.querySelectorAll('#holebar button').forEach(b => {
+    b.classList.toggle('active', String(b.dataset.hole) === String(sel));
+  });
+
+  const roundPanel = document.getElementById('round-panel');
+  const holePanel = document.getElementById('hole-panel');
+
+  if (sel === 'all') {
+    roundPanel.style.display = '';
+    holePanel.style.display = 'none';
+    // Show every hole layer again
+    for (const hn of Object.keys(holeLayers).map(Number)) {
+      if (!visibleHoles.has(hn)) { holeLayers[hn].addTo(map); visibleHoles.add(hn); }
+    }
+    // Un-dim the toggle list rows
+    document.querySelectorAll('#hole-list .hole').forEach(r => r.classList.remove('hidden'));
+    fitAll();
+    return;
+  }
+
+  // Single hole: show only that hole's layer on the map
+  roundPanel.style.display = 'none';
+  holePanel.style.display = '';
+
+  for (const hn of Object.keys(holeLayers).map(Number)) {
+    if (hn === sel) {
+      if (!map.hasLayer(holeLayers[hn])) holeLayers[hn].addTo(map);
+    } else {
+      map.removeLayer(holeLayers[hn]);
+    }
+  }
+  visibleHoles.clear();
+  visibleHoles.add(sel);
+
+  // Zoom to this hole's shots
+  const shots = SHOTS_BY_HOLE[sel] || [];
+  if (shots.length) {
+    const pts = shots.map(s => [s.lat, s.lon]);
+    map.fitBounds(L.latLngBounds(pts).pad(0.3));
+  }
+
+  renderHolePanel(sel);
+}
+
+function renderHolePanel(hn) {
+  document.getElementById('hole-title').textContent = `Hole ${hn}`;
+  const meta = HOLE_META[hn] || {};
+  const shots = SHOTS_BY_HOLE[hn] || [];
+
+  const strokes = meta.strokes != null ? meta.strokes : shots.length;
+  document.getElementById('hp-par').textContent = meta.par != null ? meta.par : '—';
+  document.getElementById('hp-score').textContent = strokes != null ? strokes : '—';
+
+  const toparEl = document.getElementById('hp-topar');
+  if (meta.par != null && strokes != null) {
+    const diff = strokes - meta.par;
+    toparEl.textContent = diff === 0 ? 'E' : (diff > 0 ? `+${diff}` : `${diff}`);
+  } else {
+    toparEl.textContent = '—';
+  }
+
+  // Per-shot list with length of each shot
+  const box = document.getElementById('hp-shots');
+  box.innerHTML = '';
+  if (!shots.length) {
+    box.innerHTML = '<div class="empty">No shots recorded.</div>';
+    return;
+  }
+  for (const s of shots) {
+    const row = document.createElement('div');
+    row.className = 'shot-row';
+    let lenLabel;
+    if (s.dist_m != null) {
+      lenLabel = `${s.dist_m.toFixed(0)} m / ${(s.dist_m * 1.09361).toFixed(0)} yd`;
+    } else {
+      lenLabel = 'tee';
+    }
+    row.innerHTML =
+      `<span class="lbl"><span class="swatch-inline" style="background:${shotColor(s.shot_num)}"></span>` +
+      `Shot ${s.shot_num}</span><span class="v">${lenLabel}</span>`;
+    box.appendChild(row);
   }
 }
 

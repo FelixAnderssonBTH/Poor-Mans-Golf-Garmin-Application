@@ -28,6 +28,8 @@
   .flash.ok { background: #2a542a; }
   .flash.error { background: #5a2020; }
   .empty { color: var(--muted); padding: 20px 0; text-align: center; }
+  .course-links { display: flex; flex-direction: column; gap: 8px; }
+  .course-links a { display: inline-block; padding: 4px 0; }
   .filter-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
   .filter-bar label { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
   .filter-bar .clear { color: var(--accent); font-size: 13px; }
@@ -53,6 +55,17 @@
       </div>
     </form>
   </section>
+
+  {% if courses %}
+  <section class="card">
+    <h2>Shot Analysis (across rounds)</h2>
+    <div class="course-links">
+      {% for c in courses %}
+        <a href="{{ url_for('course_holes', course_name=c) }}">📍 {{ c }} — shot heatmap by hole</a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
 
   <section class="card">
     <h2>Rounds ({{ rounds|length }}{% if selected_course %} · {{ selected_course }}{% endif %})</h2>

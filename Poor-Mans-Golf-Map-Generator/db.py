@@ -117,17 +117,6 @@ def list_rounds(course_name=None):
         return conn.execute(sql, params).fetchall()
 
 
-def list_courses():
-    """Distinct course names that have at least one round, alphabetical."""
-    with get_db() as conn:
-        rows = conn.execute("""
-            SELECT DISTINCT course_name FROM rounds
-            WHERE course_name IS NOT NULL AND course_name != ''
-            ORDER BY course_name
-        """).fetchall()
-        return [r["course_name"] for r in rows]
-
-
 def get_round(round_id):
     with get_db() as conn:
         row = conn.execute("SELECT * FROM rounds WHERE id = ?", (round_id,)).fetchone()
@@ -197,3 +186,105 @@ def delete_round(round_id):
     with get_db() as conn:
         conn.execute("DELETE FROM rounds WHERE id = ?", (round_id,))
         conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Cross-round analysis (shot heatmap by hole)
+# ---------------------------------------------------------------------------
+
+def list_courses():
+    """Distinct course names that have at least one round, alphabetical."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT DISTINCT course_name FROM rounds
+            WHERE course_name IS NOT NULL AND course_name != ''
+            ORDER BY course_name
+        """).fetchall()
+        return [r["course_name"] for r in rows]
+
+
+def get_course_holes(course_name):
+    """Holes that have shots for a given course, with how many rounds and
+    shots were recorded on each. Used to build the hole picker.
+    """
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT s.hole_num                         AS hole_num,
+                      COUNT(DISTINCT s.round_id)         AS rounds,
+                      COUNT(*)                           AS shots,
+                      (SELECT h.par FROM holes h
+                         JOIN rounds r2 ON r2.id = h.round_id
+                        WHERE r2.course_name = ? AND h.hole_num = s.hole_num
+                          AND h.par IS NOT NULL
+                        LIMIT 1)                         AS par
+                 FROM shots s
+                 JOIN rounds r ON r.id = s.round_id
+                WHERE r.course_name = ?
+                GROUP BY s.hole_num
+                ORDER BY s.hole_num""",
+            (course_name, course_name),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_hole_shots_across_rounds(course_name, hole_num):
+    """Every shot ever recorded on one hole of one course, across all rounds.
+    Ordered by round then shot number so the frontend can group them.
+    """
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT s.round_id   AS round_id,
+                      r.start_time AS start_time,
+                      s.shot_num   AS shot_num,
+                      s.lat        AS lat,
+                      s.lon        AS lon,
+                      s.time       AS time
+                 FROM shots s
+                 JOIN rounds r ON r.id = s.round_id
+                WHERE r.course_name = ? AND s.hole_num = ?
+                ORDER BY r.start_time, s.round_id, s.shot_num""",
+            (course_name, hole_num),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_hole_scores_across_rounds(course_name, hole_num):
+    """Per-round score info for one hole across all rounds of a course.
+    Prefers the authoritative strokes from the holes table (FIT laps);
+    falls back to the shot count for that round/hole when strokes is missing.
+    Returns list of {round_id, strokes, par}.
+    """
+    with get_db() as conn:
+        shot_counts = {
+            r["round_id"]: r["c"]
+            for r in conn.execute(
+                """SELECT s.round_id AS round_id, COUNT(*) AS c
+                     FROM shots s
+                     JOIN rounds r ON r.id = s.round_id
+                    WHERE r.course_name = ? AND s.hole_num = ?
+                    GROUP BY s.round_id""",
+                (course_name, hole_num),
+            ).fetchall()
+        }
+        hole_rows = {
+            r["round_id"]: dict(r)
+            for r in conn.execute(
+                """SELECT h.round_id AS round_id, h.strokes AS strokes, h.par AS par
+                     FROM holes h
+                     JOIN rounds r ON r.id = h.round_id
+                    WHERE r.course_name = ? AND h.hole_num = ?""",
+                (course_name, hole_num),
+            ).fetchall()
+        }
+        out = []
+        for rid in sorted(set(shot_counts) | set(hole_rows)):
+            lap = hole_rows.get(rid, {})
+            strokes = lap.get("strokes")
+            if strokes is None:
+                strokes = shot_counts.get(rid)
+            out.append({
+                "round_id": rid,
+                "strokes": strokes,
+                "par": lap.get("par"),
+            })
+        return out
