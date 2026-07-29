@@ -47,6 +47,21 @@ class GolfModel {
         }
     }
 
+    // True when this round has no pre-defined course map
+    function isFreePlay() as Boolean {
+        return courseData.freePlay;
+    }
+
+    // In free play the player must pick a par before shooting
+    function needsParSelection() as Boolean {
+        return isFreePlay() && !courseData.holeParChosen(currentHole);
+    }
+
+    function setCurrentHolePar(newPar as Number) as Void {
+        courseData.setHolePar(currentHole, newPar);
+        WatchUi.requestUpdate();
+    }
+
     function startRecording() as Void {
         if (session == null) {
             session = ActivityRecording.createSession({
@@ -141,15 +156,28 @@ class GolfModel {
             playerLat = (degrees[0] * 100000).toNumber();
             playerLon = (degrees[1] * 100000).toNumber();
 
-            var hole = courseData.holes[currentHole];
-            distToPin = _calcDistance(playerLat, playerLon, hole["pin"][0], hole["pin"][1]);
+            _updateDistToPin();
 
             WatchUi.requestUpdate();
         }
     }
 
+    // No pin exists in free play, so distance to pin is not available there
+    hidden function _updateDistToPin() as Void {
+        if (isFreePlay()) {
+            distToPin = -1.0;
+            return;
+        }
+        if (playerLat == 0) { return; }
+        var hole = courseData.holes[currentHole];
+        distToPin = _calcDistance(playerLat, playerLon, hole["pin"][0], hole["pin"][1]);
+    }
+
     // Add a stroke: record where the player is standing
     function addStroke() as Void {
+        // In free play, don't allow strokes before a par is chosen
+        if (needsParSelection()) { return; }
+
         scores[currentHole] = scores[currentHole] + 1;
 
         // Save current GPS position as shot location
@@ -202,6 +230,17 @@ class GolfModel {
     // Ball 1 lands where shot 2 was taken from, ball 2 lands where shot 3 was taken from and so on
     function getBallPositions(holeIdx, holeFinished) as Array {
         var shots = shotPositions[holeIdx] as Array;
+
+        // No pin in free play: only real shot positions, nothing at a pin
+        if (isFreePlay()) {
+            if (shots.size() < 2) { return []; }
+            var fpBalls = new [shots.size() - 1];
+            for (var i = 0; i < fpBalls.size(); i++) {
+                fpBalls[i] = shots[i + 1];
+            }
+            return fpBalls;
+        }
+
         if (shots.size() < 2 && !holeFinished) {
             return [];
         }
@@ -243,7 +282,7 @@ class GolfModel {
     }
 
     function nextHole() as Void {
-        _writeLapForHole(currentHole);  // NEW — capture lap before moving
+        _writeLapForHole(currentHole);  // capture lap before moving
         if (currentHole < courseData.numHoles - 1) {
             currentHole = currentHole + 1;
             if (holeNumRecordField != null) {
@@ -256,10 +295,7 @@ class GolfModel {
             }
         }
 
-        if (playerLat != 0) {
-            var hole = courseData.holes[currentHole];
-            distToPin = _calcDistance(playerLat, playerLon, hole["pin"][0], hole["pin"][1]);
-        }
+        _updateDistToPin();
         WatchUi.requestUpdate();
     }
 
@@ -277,15 +313,16 @@ class GolfModel {
                 holeNumRecordField.setData(courseData.holes[currentHole]["num"]);
             }
         }
-        if (playerLat != 0) {
-            var hole = courseData.holes[currentHole];
-            distToPin = _calcDistance(playerLat, playerLon, hole["pin"][0], hole["pin"][1]);
-        }
+        _updateDistToPin();
         WatchUi.requestUpdate();
     }
 
-    // Before first shot:tee-to-pin, after first shot: player-to-pin 
+    // Before first shot:tee-to-pin, after first shot: player-to-pin
+    // In free play there is no pin, so no distance is shown (-1)
     function getDisplayDistance() {
+        if (isFreePlay()) {
+            return -1.0;
+        }
         var hole = courseData.holes[currentHole];
         if (scores[currentHole] > 0 && playerLat != 0) {
             return distToPin;
@@ -298,7 +335,11 @@ class GolfModel {
         if (scores[idx] == 0) {
             return 0;
         }
-        return scores[idx] - courseData.holes[idx]["par"];
+        var p = courseData.holes[idx]["par"];
+        if (p == null || p == 0) {
+            return 0;   // free play hole with no par chosen yet
+        }
+        return scores[idx] - p;
     }
 
     // Total score relative to par for all played holes
@@ -369,5 +410,5 @@ class GolfModel {
         return Math.sqrt(dx * dx + dy * dy);
     }
 
-    
+
 }

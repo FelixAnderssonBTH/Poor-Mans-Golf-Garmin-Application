@@ -1,27 +1,26 @@
 import Toybox.WatchUi;
 import Toybox.Lang;
 
-class CoursePickerDelegate extends WatchUi.BehaviorDelegate {
+//  Input handler for the free play hole count screen.
+
+class HoleCountPickerDelegate extends WatchUi.BehaviorDelegate {
     var pickerView;
 
-    function initialize(view as CoursePickerView) {
+    function initialize(view as HoleCountPickerView) {
         BehaviorDelegate.initialize();
         pickerView = view;
     }
 
-    // Swipe down / DOWN button: next course
     function onNextPage() {
-        pickerView.nextCourse();
+        pickerView.next();
         return true;
     }
 
-    // Swipe up / UP button: previous course
     function onPreviousPage() {
-        pickerView.prevCourse();
+        pickerView.prev();
         return true;
     }
 
-    // SELECT/START: start the selected course
     function onSelect() {
         _startGame();
         return true;
@@ -37,17 +36,7 @@ class CoursePickerDelegate extends WatchUi.BehaviorDelegate {
     }
 
     hidden function _startGame() as Void {
-        // "No Course" selected: go to the hole count screen instead
-        if (pickerView.isNoCourseSelected()) {
-            var countView = new HoleCountPickerView();
-            var countDelegate = new HoleCountPickerDelegate(countView);
-            WatchUi.pushView(countView, countDelegate, WatchUi.SLIDE_LEFT);
-            return;
-        }
-
-        // Only now load the full course data into memory
-        var selectedData = pickerView.loadSelectedCourse();
-        var courseData = new CourseData(selectedData);
+        var courseData = CourseData.createFreePlay(pickerView.selectedCount());
         var model = new GolfModel(courseData);
         model.startGps();
         model.startRecording();
@@ -59,13 +48,12 @@ class CoursePickerDelegate extends WatchUi.BehaviorDelegate {
         WatchUi.switchToView(holeView, delegate, WatchUi.SLIDE_LEFT);
     }
 
-    // BACK: exit app
+    // BACK: return to course picker
     function onBack() {
         WatchUi.popView(WatchUi.SLIDE_RIGHT);
         return true;
     }
 
-    // Block tap
     function onTap(evt) {
         return true;
     }

@@ -1,12 +1,25 @@
 import Toybox.WatchUi;
 import Toybox.Lang;
+import Toybox.Timer;
 
-//  Input handler for the course picker. START loads the full course and starts the game
+//  Input handler for the round. START registers a stroke, BACK undoes it,
+//  UP/DOWN move between holes. In free play, when a hole has no par chosen yet,
+//  UP/DOWN pick the par and START confirms it. Holding BACK on a free play hole
+//  re-opens the par picker; on devices that don't report a held BACK, the menu
+//  (long press UP) offers the same thing.
 
 class GolfDelegate extends WatchUi.BehaviorDelegate {
     var model;
     var holeView;
     var summaryView;
+
+    // Long press detection for the BACK key.
+    // onBack() fires on release, so we start a timer on key down: if it expires
+    // while the key is still held it's a long press, and we open the par editor.
+    // The onBack() that follows is then swallowed.
+    hidden var _holdTimer;
+    hidden var _longPressFired = false;
+    const LONG_PRESS_MS = 600;
 
     function initialize(golfModel as GolfModel, hView as HoleView, sView as SummaryView) {
         BehaviorDelegate.initialize();
@@ -15,8 +28,23 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
         summaryView = sView;
     }
 
-    // Swipe up / UP button: previous hole
+    // True while the free play par picker is on screen
+    hidden function _inParPicker() as Boolean {
+        return (!model.roundFinished && model.isFreePlay() && holeView.parPickerActive());
+    }
+
+    // Can the par of the current hole be edited right now?
+    hidden function _canEditPar() as Boolean {
+        return (!model.roundFinished && model.isFreePlay()
+                && !model.needsParSelection() && !holeView.editingPar);
+    }
+
+    // Swipe up / UP button: previous hole (or previous par option)
     function onPreviousPage() {
+        if (_inParPicker()) {
+            holeView.prevPar();
+            return true;
+        }
         if (model.roundFinished) {
             // Go back to last hole from summary
             model.prevHole();
@@ -27,8 +55,12 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
-    // Swipe down / DOWN button: next hole
+    // Swipe down / DOWN button: next hole (or next par option)
     function onNextPage() {
+        if (_inParPicker()) {
+            holeView.nextPar();
+            return true;
+        }
         var wasFinished = model.roundFinished;
         model.nextHole();
         if (model.roundFinished && !wasFinished) {
@@ -38,11 +70,61 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
+    // BACK pressed down: start the hold timer
+    function onKeyPressed(evt) {
+        if (evt.getKey() == WatchUi.KEY_ESC && _canEditPar()) {
+            _stopHoldTimer();
+            _longPressFired = false;
+            _holdTimer = new Timer.Timer();
+            _holdTimer.start(method(:onHoldExpired) as Method() as Void, LONG_PRESS_MS, false);
+        }
+        return false;
+    }
+
+    // BACK released: cancel the timer if it hasn't fired yet
+    function onKeyReleased(evt) {
+        if (evt.getKey() == WatchUi.KEY_ESC) {
+            _stopHoldTimer();
+        }
+        return false;
+    }
+
+    // Held long enough: open the par editor
+    function onHoldExpired() as Void {
+        _stopHoldTimer();
+        if (_canEditPar()) {
+            _longPressFired = true;
+            holeView.openParEdit();
+        }
+    }
+
+    hidden function _stopHoldTimer() as Void {
+        if (_holdTimer != null) {
+            _holdTimer.stop();
+            _holdTimer = null;
+        }
+    }
+
     // BACK button: undo last stroke
     function onBack() {
+        _stopHoldTimer();
+
+        // This press already opened the par editor, don't also undo a stroke
+        if (_longPressFired) {
+            _longPressFired = false;
+            return true;
+        }
+
         if (model.roundFinished) {
             model.prevHole();
             WatchUi.switchToView(holeView, self, WatchUi.SLIDE_RIGHT);
+            return true;
+        }
+        if (_inParPicker()) {
+            // Cancel an in-progress par edit, otherwise nothing to undo yet
+            if (holeView.editingPar) {
+                holeView.cancelParEdit();
+            }
             return true;
         }
         if (model.scores[model.currentHole] > 0) {
@@ -62,6 +144,9 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
                 // On summary page: confirm finish
                 var dialog = new WatchUi.Confirmation("Finish round?");
                 WatchUi.pushView(dialog, new SaveConfirmDelegate(model), WatchUi.SLIDE_UP);
+            } else if (_inParPicker()) {
+                // Lock in the par for this hole
+                holeView.confirmPar();
             } else {
                 model.addStroke();
             }
@@ -71,7 +156,7 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
         return false;
     }
 
-    // Long press MENU/START: show save confirmation
+    // Long press MENU (hold UP): Offers to save the round.
     function onMenu() {
         var dialog = new WatchUi.Confirmation("Save round?");
         WatchUi.pushView(dialog, new SaveConfirmDelegate(model), WatchUi.SLIDE_UP);

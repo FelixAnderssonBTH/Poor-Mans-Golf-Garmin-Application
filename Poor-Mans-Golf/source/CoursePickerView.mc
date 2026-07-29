@@ -3,7 +3,8 @@ import Toybox.WatchUi;
 import Toybox.Lang;
 import Toybox.Application;
 
-//  Course selection screen. Shows course name, hole count, and par. 
+//  Course selection screen. Shows course name, hole count, and par.
+//  The last entry in the list is "No Course" (free play, GPS only, no map).
 
 class CoursePickerView extends WatchUi.View {
 
@@ -14,6 +15,9 @@ class CoursePickerView extends WatchUi.View {
     var coursePars;
     var resourceIds;
     var currentIndex = 0;
+
+    // Number of selectable entries = courses + 1 (the No Course entry)
+    var entryCount = 0;
 
     function initialize() {
         View.initialize();
@@ -38,6 +42,13 @@ class CoursePickerView extends WatchUi.View {
             courseHoles[i] = (data["holes"] as Array).size();
             coursePars[i] = data["par"];
         }
+
+        entryCount = count + 1;   // +1 for "No Course"
+    }
+
+    // True when the currently highlighted entry is the No Course option
+    function isNoCourseSelected() as Boolean {
+        return (currentIndex == resourceIds.size());
     }
 
     function onUpdate(dc as Graphics.Dc) as Void {
@@ -47,22 +58,29 @@ class CoursePickerView extends WatchUi.View {
         dc.setColor(0x222222, 0x222222);
         dc.clear();
 
-        // Course name
-        dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h / 2 - 30, Graphics.FONT_SMALL, courseNames[currentIndex], Graphics.TEXT_JUSTIFY_CENTER);
+        if (isNoCourseSelected()) {
+            // Free play entry
+            dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(w / 2, h / 2 - 30, Graphics.FONT_SMALL, "No Course", Graphics.TEXT_JUSTIFY_CENTER);
 
-        // Holes and par
-        dc.setColor(0xAAAAAA, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h / 2 + 10, Graphics.FONT_TINY, courseHoles[currentIndex] + " holes  Par " + coursePars[currentIndex], Graphics.TEXT_JUSTIFY_CENTER);
+        } else {
+            // Course name
+            dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(w / 2, h / 2 - 30, Graphics.FONT_SMALL, courseNames[currentIndex], Graphics.TEXT_JUSTIFY_CENTER);
+
+            // Holes and par
+            dc.setColor(0xAAAAAA, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(w / 2, h / 2 + 10, Graphics.FONT_TINY, courseHoles[currentIndex] + " holes  Par " + coursePars[currentIndex], Graphics.TEXT_JUSTIFY_CENTER);
+        }
     }
 
     function nextCourse() as Void {
-        currentIndex = (currentIndex + 1) % resourceIds.size();
+        currentIndex = (currentIndex + 1) % entryCount;
         WatchUi.requestUpdate();
     }
 
     function prevCourse() as Void {
-        currentIndex = (currentIndex - 1 + resourceIds.size()) % resourceIds.size();
+        currentIndex = (currentIndex - 1 + entryCount) % entryCount;
         WatchUi.requestUpdate();
     }
 

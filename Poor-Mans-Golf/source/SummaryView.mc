@@ -49,7 +49,7 @@ class SummaryView extends WatchUi.View {
         dc.drawText(w / 2, h / 2, Graphics.FONT_MEDIUM,
             "Score: " + scoreText, Graphics.TEXT_JUSTIFY_CENTER);
 
-        // Par
+        // Par (in free play this is the sum of the pars picked during the round)
         dc.setColor(0xAAAAAA, Graphics.COLOR_TRANSPARENT);
         dc.drawText(w / 2, h / 2 + 40, Graphics.FONT_MEDIUM,
             "Par: " + model.courseData.par, Graphics.TEXT_JUSTIFY_CENTER);
