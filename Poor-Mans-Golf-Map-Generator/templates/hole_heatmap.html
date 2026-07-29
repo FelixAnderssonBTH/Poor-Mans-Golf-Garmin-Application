@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ course_name }} — Hole {{ selected_hole }} shot heatmap</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root { --bg: #1a3a1a; --fg: #e8f1e8; --muted: #8aa68a; --accent: #40c040; --card: #234a23; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px system-ui, sans-serif; background: var(--bg); color: var(--fg); display: flex; flex-direction: column; }
+  header { padding: 12px 20px; background: #0f240f; border-bottom: 1px solid #305030; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 18px; }
+  header .meta { color: var(--muted); font-size: 13px; }
+  header a { color: var(--accent); text-decoration: none; font-size: 13px; }
+  .holebar { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 20px; background: #143014; border-bottom: 1px solid #305030; }
+  .holebar a {
+    display: inline-flex; flex-direction: column; align-items: center;
+    min-width: 44px; padding: 4px 6px; border-radius: 6px;
+    background: #0f240f; color: var(--fg); text-decoration: none;
+    border: 1px solid #305030; font-size: 13px; line-height: 1.2;
+  }
+  .holebar a small { color: var(--muted); font-size: 10px; }
+  .holebar a.active { background: var(--accent); color: #0f240f; border-color: var(--accent); }
+  .holebar a.active small { color: #0f240f; }
+  .container { display: flex; flex: 1; min-height: 0; }
+  #map { flex: 1; background: #0a1a0a; }
+  aside { width: 250px; background: var(--card); padding: 16px; overflow-y: auto; }
+  aside h2 { margin: 0 0 10px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #305030; }
+  .stat:last-child { border: 0; }
+  .stat .v { font-weight: 600; }
+  .controls { margin: 14px 0; display: flex; flex-direction: column; gap: 8px; }
+  .controls label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .legend { margin-top: 14px; }
+  .legend .item { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; }
+  .legend .swatch { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #000; flex: 0 0 14px; }
+  .swatch-inline { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1px solid #000; margin-right: 6px; vertical-align: middle; }
+  .empty { color: var(--muted); padding: 20px 0; text-align: center; }
+  .leaflet-popup-content { font: 13px system-ui, sans-serif; }
+  .shot-dot {
+    border-radius: 50%; width: 18px; height: 18px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 10px; color: #000;
+    border: 2px solid #000; box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>{{ course_name }}</h1>
+  <div class="meta">Shot heatmap — Hole {{ selected_hole }}</div>
+  <a href="{{ url_for('index') }}">← All rounds</a>
+</header>
+
+<div class="holebar">
+  {% for h in holes %}
+    <a href="{{ url_for('course_hole', course_name=course_name, hole_num=h['hole_num']) }}"
+       class="{{ 'active' if h['hole_num'] == selected_hole else '' }}">
+      {{ h['hole_num'] }}
+      <small>{{ h['rounds'] }}r</small>
+    </a>
+  {% endfor %}
+</div>
+
+<div class="container">
+  <div id="map"></div>
+  <aside>
+    <h2>Hole {{ selected_hole }}</h2>
+    <div class="stat"><span>Par</span><span class="v" id="stat-par">—</span></div>
+    <div class="stat"><span>Number of rounds</span><span class="v" id="stat-rounds">—</span></div>
+    <div class="stat"><span>Total shots</span><span class="v" id="stat-shots">—</span></div>
+    <div class="stat"><span>Avg shots</span><span class="v" id="stat-avg">—</span></div>
+    <div class="stat"><span>Avg score</span><span class="v" id="stat-avgscore">—</span></div>
+
+    <h2 style="margin-top:16px">Avg length per shot</h2>
+    <div id="shot-lengths"><div class="empty">—</div></div>
+
+    <div class="controls">
+      <h2>Color by</h2>
+      <label><input type="radio" name="colormode" value="shot" checked> Shot number</label>
+      <label><input type="radio" name="colormode" value="round"> Round</label>
+      <label style="margin-top:6px"><input type="checkbox" id="toggle-lines" checked> Connect shots per round</label>
+    </div>
+
+    <div class="legend" id="legend"></div>
+  </aside>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+const COURSE = {{ course_name|tojson }};
+const HOLE = {{ selected_hole }};
+
+// Color palette for shot number (1 = tee, 2 = second, ...)
+const SHOT_COLORS = ['#e03030', '#e0a020', '#30b030', '#3080e0', '#8040e0', '#e040a0', '#20b0b0', '#909090'];
+function shotColor(n) { return SHOT_COLORS[(n - 1) % SHOT_COLORS.length]; }
+
+// Distinct color per round via hue rotation
+function roundColor(idx, total) {
+  return `hsl(${Math.round(idx * (360 / Math.max(total, 1)))}, 70%, 50%)`;
+}
+
+// Distance in meters between two [lat, lon] points (haversine)
+function distMeters(a, b) {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(b[0] - a[0]);
+  const dLon = toRad(b[1] - a[1]);
+  const lat1 = toRad(a[0]), lat2 = toRad(b[0]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+const map = L.map('map', { maxZoom: 22, zoomSnap: 0.5 });
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 22, maxNativeZoom: 19, attribution: '© OpenStreetMap'
+}).addTo(map);
+
+let markerLayer = L.layerGroup().addTo(map);
+let lineLayer = L.layerGroup().addTo(map);
+let SHOTS = [];
+let SCORES = [];
+let ROUND_ORDER = [];   // round_ids in chronological order
+
+function makeIcon(color, label) {
+  return L.divIcon({
+    className: '',
+    html: `<div class="shot-dot" style="background:${color}">${label}</div>`,
+    iconSize: [18, 18], iconAnchor: [9, 9]
+  });
+}
+
+function currentColorMode() {
+  const el = document.querySelector('input[name="colormode"]:checked');
+  return el ? el.value : 'shot';
+}
+
+function render() {
+  markerLayer.clearLayers();
+  lineLayer.clearLayers();
+
+  const mode = currentColorMode();
+  const showLines = document.getElementById('toggle-lines').checked;
+
+  // Group shots by round for line drawing
+  const byRound = {};
+  for (const s of SHOTS) {
+    (byRound[s.round_id] = byRound[s.round_id] || []).push(s);
+  }
+
+  // Connecting lines per round
+  if (showLines) {
+    ROUND_ORDER.forEach((rid, idx) => {
+      const pts = (byRound[rid] || []).map(s => [s.lat, s.lon]);
+      if (pts.length > 1) {
+        const col = mode === 'round' ? roundColor(idx, ROUND_ORDER.length) : '#ffffff';
+        L.polyline(pts, { color: col, weight: 1.5, opacity: 0.4 }).addTo(lineLayer);
+      }
+    });
+  }
+
+  // Markers
+  for (const s of SHOTS) {
+    const roundIdx = ROUND_ORDER.indexOf(s.round_id);
+    const color = mode === 'round'
+      ? roundColor(roundIdx, ROUND_ORDER.length)
+      : shotColor(s.shot_num);
+    const label = mode === 'round' ? '' : s.shot_num;
+    let distLine = '';
+    if (s.dist_m != null) {
+      const yards = s.dist_m * 1.09361;
+      distLine = `<br><b>Traveled:</b> ${s.dist_m.toFixed(0)} m (${yards.toFixed(0)} yd)`;
+    }
+    L.marker([s.lat, s.lon], { icon: makeIcon(color, label) })
+      .bindPopup(
+        `<b>Hole ${HOLE}, Shot ${s.shot_num}</b><br>` +
+        `${s.start_time || ''}<br>${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}${distLine}`
+      )
+      .addTo(markerLayer);
+  }
+
+  buildLegend(mode);
+}
+
+function buildLegend(mode) {
+  const el = document.getElementById('legend');
+  el.innerHTML = '';
+  const h = document.createElement('h2');
+  h.textContent = 'Legend';
+  el.appendChild(h);
+
+  if (mode === 'shot') {
+    const maxShot = SHOTS.reduce((m, s) => Math.max(m, s.shot_num), 0);
+    for (let n = 1; n <= maxShot; n++) {
+      const row = document.createElement('div');
+      row.className = 'item';
+      row.innerHTML = `<span class="swatch" style="background:${shotColor(n)}"></span> Shot ${n}${n === 1 ? ' (tee)' : ''}`;
+      el.appendChild(row);
+    }
+  } else {
+    ROUND_ORDER.forEach((rid, idx) => {
+      const any = SHOTS.find(s => s.round_id === rid);
+      const label = any && any.start_time ? any.start_time.split(' ')[0] : `Round ${rid}`;
+      const row = document.createElement('div');
+      row.className = 'item';
+      row.innerHTML = `<span class="swatch" style="background:${roundColor(idx, ROUND_ORDER.length)}"></span> ${label}`;
+      el.appendChild(row);
+    });
+  }
+}
+
+function computeStats() {
+  const rounds = new Set(SHOTS.map(s => s.round_id));
+  document.getElementById('stat-rounds').textContent = rounds.size;
+  document.getElementById('stat-shots').textContent = SHOTS.length;
+  document.getElementById('stat-avg').textContent =
+    rounds.size ? (SHOTS.length / rounds.size).toFixed(1) : '—';
+
+  // Average score on this hole (strokes per round, from SCORES payload)
+  const withStrokes = SCORES.filter(s => s.strokes != null);
+  const avgScoreEl = document.getElementById('stat-avgscore');
+  const parEl = document.getElementById('stat-par');
+  const pars = SCORES.filter(s => s.par != null).map(s => s.par);
+  const par = pars.length ? pars[0] : null;
+  parEl.textContent = par != null ? par : '—';
+
+if (withStrokes.length) {
+    const avgScore = withStrokes.reduce((sum, s) => sum + s.strokes, 0) / withStrokes.length;
+    if (par != null) {
+      const diff = avgScore - par;
+      const sign = diff > 0 ? '+' : '';
+      avgScoreEl.textContent = `${sign}${diff.toFixed(1)}`;
+    } else {
+      avgScoreEl.textContent = avgScore.toFixed(1);
+    }
+  } else {
+    avgScoreEl.textContent = '—';
+  }
+
+  // Average length per shot number: avg of shot 1's distance, shot 2's, etc.
+  // (Shot 1 has no distance — it's the tee position — so it's skipped.)
+  const byShotNum = {};
+  for (const s of SHOTS) {
+    if (s.dist_m == null) continue;
+    (byShotNum[s.shot_num] = byShotNum[s.shot_num] || []).push(s.dist_m);
+  }
+  const container = document.getElementById('shot-lengths');
+  container.innerHTML = '';
+  const shotNums = Object.keys(byShotNum).map(Number).sort((a, b) => a - b);
+  if (!shotNums.length) {
+    container.innerHTML = '<div class="empty">No measured shots.</div>';
+    return;
+  }
+  for (const n of shotNums) {
+    const arr = byShotNum[n];
+    const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
+    const row = document.createElement('div');
+    row.className = 'stat';
+    row.innerHTML =
+      `<span><span class="swatch-inline" style="background:${shotColor(n)}"></span>` +
+      `Shot ${n} <small style="color:var(--muted)">(${arr.length})</small></span>` +
+      `<span class="v">${avg.toFixed(0)} m / ${(avg * 1.09361).toFixed(0)} yd</span>`;
+    container.appendChild(row);
+  }
+}
+
+// Compute each shot's travel distance from the previous shot in the SAME round.
+// Shot 1 in a round has no prior position, so its distance stays null.
+function computeDistances() {
+  const byRound = {};
+  for (const s of SHOTS) {
+    (byRound[s.round_id] = byRound[s.round_id] || []).push(s);
+  }
+  for (const rid of Object.keys(byRound)) {
+    const group = byRound[rid];  // already ordered by shot_num from the query
+    let prev = null;
+    for (const s of group) {
+      s.dist_m = prev ? distMeters([prev.lat, prev.lon], [s.lat, s.lon]) : null;
+      prev = s;
+    }
+  }
+}
+
+fetch(`/course/${encodeURIComponent(COURSE)}/hole/${HOLE}/data`)
+  .then(r => r.json())
+  .then(data => {
+    SHOTS = data.shots || [];
+    SCORES = data.scores || [];
+    // chronological round order (shots already sorted by start_time)
+    ROUND_ORDER = [];
+    for (const s of SHOTS) {
+      if (!ROUND_ORDER.includes(s.round_id)) ROUND_ORDER.push(s.round_id);
+    }
+
+    if (!SHOTS.length) {
+      map.setView([0, 0], 2);
+      document.getElementById('legend').innerHTML = '<div class="empty">No shots recorded on this hole.</div>';
+      return;
+    }
+
+    const pts = SHOTS.map(s => [s.lat, s.lon]);
+    map.fitBounds(L.latLngBounds(pts).pad(0.2));
+
+    computeDistances();
+    computeStats();
+    render();
+  });
+
+document.querySelectorAll('input[name="colormode"]').forEach(el =>
+  el.addEventListener('change', render));
+document.getElementById('toggle-lines').addEventListener('change', render);
+</script>
+</body>
+</html>
