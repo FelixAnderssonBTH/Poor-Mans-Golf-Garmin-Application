@@ -99,16 +99,33 @@ def import_round(data, course_name=None, notes=None):
         return round_id
 
 
-def list_rounds():
+def list_rounds(course_name=None):
+    """List rounds, optionally filtered to a single course."""
+    sql = """
+        SELECT r.id, r.course_name, r.start_time, r.time_seconds, r.distance_m,
+               r.calories, r.sport, r.notes,
+               (SELECT COUNT(*) FROM shots WHERE round_id = r.id) AS total_shots,
+               (SELECT MAX(hole_num) FROM shots WHERE round_id = r.id) AS holes_played
+        FROM rounds r
+    """
+    params = ()
+    if course_name:
+        sql += " WHERE r.course_name = ?"
+        params = (course_name,)
+    sql += " ORDER BY r.start_time DESC"
     with get_db() as conn:
-        return conn.execute("""
-            SELECT r.id, r.course_name, r.start_time, r.time_seconds, r.distance_m,
-                   r.calories, r.sport, r.notes,
-                   (SELECT COUNT(*) FROM shots WHERE round_id = r.id) AS total_shots,
-                   (SELECT MAX(hole_num) FROM shots WHERE round_id = r.id) AS holes_played
-            FROM rounds r
-            ORDER BY r.start_time DESC
+        return conn.execute(sql, params).fetchall()
+
+
+def list_courses():
+    """Distinct course names that have at least one round, alphabetical."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT DISTINCT course_name FROM rounds
+            WHERE course_name IS NOT NULL AND course_name != ''
+            ORDER BY course_name
         """).fetchall()
+        return [r["course_name"] for r in rows]
 
 
 def get_round(round_id):

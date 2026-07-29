@@ -21,8 +21,15 @@ db.init_db()
 
 @app.route("/")
 def index():
-    rounds = db.list_rounds()
-    return render_template("index.html", rounds=rounds)
+    selected_course = (request.args.get("course") or "").strip() or None
+    rounds = db.list_rounds(course_name=selected_course)
+    courses = db.list_courses()
+    return render_template(
+        "index.html",
+        rounds=rounds,
+        courses=courses,
+        selected_course=selected_course,
+    )
 
 
 @app.route("/upload", methods=["POST"])

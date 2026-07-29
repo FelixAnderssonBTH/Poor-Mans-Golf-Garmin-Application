@@ -13,7 +13,7 @@
   .card { background: var(--card); border-radius: 8px; padding: 18px; margin-bottom: 20px; }
   .card h2 { margin: 0 0 12px; font-size: 16px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
   form .row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
-  input[type=text], input[type=file] { background: #0f240f; border: 1px solid #305030; color: var(--fg); padding: 8px 10px; border-radius: 4px; font: inherit; }
+  input[type=text], input[type=file], select { background: #0f240f; border: 1px solid #305030; color: var(--fg); padding: 8px 10px; border-radius: 4px; font: inherit; }
   input[type=text] { min-width: 220px; }
   button { background: var(--accent); color: #0f240f; border: 0; padding: 8px 16px; border-radius: 4px; font: inherit; font-weight: 600; cursor: pointer; }
   button.danger { background: var(--danger); color: #fff; padding: 4px 10px; font-size: 13px; }
@@ -28,6 +28,9 @@
   .flash.ok { background: #2a542a; }
   .flash.error { background: #5a2020; }
   .empty { color: var(--muted); padding: 20px 0; text-align: center; }
+  .filter-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .filter-bar label { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .filter-bar .clear { color: var(--accent); font-size: 13px; }
 </style>
 </head>
 <body>
@@ -52,7 +55,23 @@
   </section>
 
   <section class="card">
-    <h2>Rounds ({{ rounds|length }})</h2>
+    <h2>Rounds ({{ rounds|length }}{% if selected_course %} · {{ selected_course }}{% endif %})</h2>
+
+    {% if courses %}
+    <form method="get" action="{{ url_for('index') }}" class="filter-bar">
+      <label for="course">Course</label>
+      <select id="course" name="course" onchange="this.form.submit()">
+        <option value="">All courses</option>
+        {% for c in courses %}
+          <option value="{{ c }}" {% if c == selected_course %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+      {% if selected_course %}
+        <a class="clear" href="{{ url_for('index') }}">Clear filter</a>
+      {% endif %}
+    </form>
+    {% endif %}
+
     {% if rounds %}
     <table>
       <thead>
@@ -86,7 +105,11 @@
       </tbody>
     </table>
     {% else %}
-      <div class="empty">No rounds yet — import a round JSON from <code>extract_round.py</code> above.</div>
+      {% if selected_course %}
+        <div class="empty">No rounds for {{ selected_course }}. <a href="{{ url_for('index') }}">Show all rounds</a>.</div>
+      {% else %}
+        <div class="empty">No rounds yet — import a round JSON from <code>extract_round.py</code> above.</div>
+      {% endif %}
     {% endif %}
   </section>
 </main>
