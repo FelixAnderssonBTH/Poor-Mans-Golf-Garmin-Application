@@ -143,6 +143,14 @@ def slugify(name):
     return s
 
 
+def duplicate_hole_refs(holes):
+    """Hole numbers that occur more than once, as {ref: count}."""
+    counts = {}
+    for h in holes:
+        counts[h["ref"]] = counts.get(h["ref"], 0) + 1
+    return {ref: n for ref, n in sorted(counts.items()) if n > 1}
+
+
 class OSMGolfParser:
     def __init__(self, data):
         self.course_name = ""
@@ -308,6 +316,26 @@ def main():
         print(f"  Hole {h['num']:2d} Par {h['par']} {h['dist']:3d}m  "
               f"G={'Y' if 'green' in h else '-'} FW={len(h.get('fw',[]))} "
               f"BK={len(h.get('bk',[]))} W={len(h.get('water',[]))}")
+
+    dups = duplicate_hole_refs(parser.holes)
+    if dups:
+        shown = list(dups.items())[:8]
+        listed = ", ".join(f"{ref} (x{n})" for ref, n in shown)
+        if len(dups) > len(shown):
+            listed += f", ... (+{len(dups) - len(shown)} more)"
+        print(f"\n{'='*50}")
+        print("  WARNING: duplicate hole numbers")
+        print(f"{'='*50}")
+        print(f"  Appears more than once: {listed}")
+        print(f"  This export has {len(parser.holes)} holes and sums to par {course['par']}.")
+        print("  Two things cause this:")
+        print("    - the export covers a multi-course club and contains more than")
+        print("      one course: re-export with the area or bounding box narrowed")
+        print("      to a single course")
+        print("    - a golf=hole way was split in OSM and both halves kept the")
+        print("      same ref: merge them in OSM")
+        print("  Hole numbers and par above are unreliable until this is fixed.")
+
     print("\nDone!")
 
 
