@@ -56,7 +56,7 @@ class CoursePickerDelegate extends WatchUi.BehaviorDelegate {
         model.startRecording();
 
         var holeView = new HoleView(model, pickerView, self);
-        var summaryView = new SummaryView(model);
+        var summaryView = new SummaryView(model, pickerView, self);
         var delegate = new GolfDelegate(model, holeView, summaryView);
 
         WatchUi.switchToView(holeView, delegate, WatchUi.SLIDE_LEFT);

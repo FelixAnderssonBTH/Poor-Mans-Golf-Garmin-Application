@@ -7,14 +7,38 @@ import Toybox.Lang;
 class SummaryView extends WatchUi.View {
     var model;
 
-    function initialize(golfModel as GolfModel) {
+    // Where Discard returns to. This view can be the one revealed when the
+    // discard confirmation is popped, so it needs the same handling as HoleView.
+    var pickerView as CoursePickerView;
+    var pickerDelegate as CoursePickerDelegate;
+
+    function initialize(golfModel as GolfModel, pView as CoursePickerView,
+                        pDelegate as CoursePickerDelegate) {
         View.initialize();
         model = golfModel;
+        pickerView = pView;
+        pickerDelegate = pDelegate;
+    }
+
+    // The round was discarded from the menu while the summary was on screen.
+    // The system pops that confirmation after onResponse() returns, revealing
+    // this view, so the move back to the picker has to happen here.
+    function onShow() as Void {
+        if (model.roundDiscarded) {
+            WatchUi.switchToView(pickerView, pickerDelegate, WatchUi.SLIDE_IMMEDIATE);
+        }
     }
 
     function onUpdate(dc as Graphics.Dc) as Void {
         var w = dc.getWidth();
         var h = dc.getHeight();
+
+        // Leaving: paint bare background rather than the round being abandoned
+        if (model.roundDiscarded) {
+            dc.setColor(0x222222, 0x222222);
+            dc.clear();
+            return;
+        }
 
         dc.setColor(0x222222, 0x222222);
         dc.clear();
