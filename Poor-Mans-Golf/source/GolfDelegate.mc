@@ -1,6 +1,7 @@
 import Toybox.WatchUi;
 import Toybox.Lang;
 import Toybox.Timer;
+import Toybox.System;
 
 //  Input handler for the round. START registers a stroke, BACK undoes it,
 //  UP/DOWN move between holes. In free play, when a hole has no par chosen yet,
@@ -156,10 +157,15 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
         return false;
     }
 
-    // Long press MENU (hold UP): Offers to save the round.
+    // Long press MENU (hold UP): the only way out of a round mid-play.
+    // Save writes the activity and quits; Discard throws it away and drops back
+    // to the course picker; Resume is BACK (Menu2 pops itself).
     function onMenu() {
-        var dialog = new WatchUi.Confirmation("Save round?");
-        WatchUi.pushView(dialog, new SaveConfirmDelegate(model), WatchUi.SLIDE_UP);
+        var menu = new WatchUi.Menu2({:title => "Round"});
+        menu.addItem(new WatchUi.MenuItem("Save & exit", null, :save, null));
+        menu.addItem(new WatchUi.MenuItem("Discard", null, :discard, null));
+        menu.addItem(new WatchUi.MenuItem("Resume", null, :resume, null));
+        WatchUi.pushView(menu, new RoundMenuDelegate(model), WatchUi.SLIDE_UP);
         return true;
     }
 
@@ -195,7 +201,64 @@ class SaveConfirmDelegate extends WatchUi.ConfirmationDelegate {
     function onResponse(response) {
         if (response == WatchUi.CONFIRM_YES) {
             model.saveAndStop();
-            WatchUi.popView(WatchUi.SLIDE_RIGHT);
+            // System.exit() rather than popView(): the round is over either way,
+            // and popping depended on how deep the view stack happened to be,
+            // which differed between the course and free play paths.
+            System.exit();
+        }
+        return true;
+    }
+}
+
+
+//  Input handler for the hold-UP round menu.
+
+class RoundMenuDelegate extends WatchUi.Menu2InputDelegate {
+    var model as GolfModel;
+
+    function initialize(golfModel as GolfModel) {
+        Menu2InputDelegate.initialize();
+        model = golfModel;
+    }
+
+    function onSelect(item as WatchUi.MenuItem) as Void {
+        var id = item.getId();
+
+        if (id == :save) {
+            model.saveAndStop();
+            System.exit();
+            return;
+        }
+
+        if (id == :discard) {
+            // Close the menu first, so the confirmation sits directly on top of
+            // the hole view and answering it leaves a one-deep stack again.
+            WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
+            var dialog = new WatchUi.Confirmation("Discard round?");
+            WatchUi.pushView(dialog, new DiscardConfirmDelegate(model), WatchUi.SLIDE_UP);
+            return;
+        }
+
+        // :resume -- just close the menu and carry on playing
+        WatchUi.popView(WatchUi.SLIDE_DOWN);
+    }
+}
+
+
+class DiscardConfirmDelegate extends WatchUi.ConfirmationDelegate {
+    var model as GolfModel;
+
+    function initialize(golfModel as GolfModel) {
+        ConfirmationDelegate.initialize();
+        model = golfModel;
+    }
+
+    // Only state changes here. The system pops this dialog once we return, so
+    // any view switch made here would be popped with it; HoleView.onShow()
+    // performs the actual move back to the course picker.
+    function onResponse(response) {
+        if (response == WatchUi.CONFIRM_YES) {
+            model.discardAndStop();
         }
         return true;
     }

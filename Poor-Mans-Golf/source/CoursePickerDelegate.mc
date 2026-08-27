@@ -2,7 +2,7 @@ import Toybox.WatchUi;
 import Toybox.Lang;
 
 class CoursePickerDelegate extends WatchUi.BehaviorDelegate {
-    var pickerView;
+    var pickerView as CoursePickerView;
 
     function initialize(view as CoursePickerView) {
         BehaviorDelegate.initialize();
@@ -40,8 +40,11 @@ class CoursePickerDelegate extends WatchUi.BehaviorDelegate {
         // "No Course" selected: go to the hole count screen instead
         if (pickerView.isNoCourseSelected()) {
             var countView = new HoleCountPickerView();
-            var countDelegate = new HoleCountPickerDelegate(countView);
-            WatchUi.pushView(countView, countDelegate, WatchUi.SLIDE_LEFT);
+            var countDelegate = new HoleCountPickerDelegate(countView, pickerView, self);
+            // switchToView, not pushView: every screen in the app keeps the view
+            // stack exactly one deep, so ending a round behaves the same however
+            // it was started. The hole count screen returns here via its onBack().
+            WatchUi.switchToView(countView, countDelegate, WatchUi.SLIDE_LEFT);
             return;
         }
 
@@ -52,7 +55,7 @@ class CoursePickerDelegate extends WatchUi.BehaviorDelegate {
         model.startGps();
         model.startRecording();
 
-        var holeView = new HoleView(model);
+        var holeView = new HoleView(model, pickerView, self);
         var summaryView = new SummaryView(model);
         var delegate = new GolfDelegate(model, holeView, summaryView);
 

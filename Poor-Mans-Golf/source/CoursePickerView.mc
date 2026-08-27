@@ -28,6 +28,9 @@ class CoursePickerView extends WatchUi.View {
         // ADD NEW COURSES HERE when you add new JSON files
         resourceIds = [
             Rez.JsonData.course_trummenas,
+            Rez.JsonData.course_alsace_golf,
+            Rez.JsonData.course_eschenried,
+            Rez.JsonData.course_eschenhof,
         ];
 
         var count = resourceIds.size();

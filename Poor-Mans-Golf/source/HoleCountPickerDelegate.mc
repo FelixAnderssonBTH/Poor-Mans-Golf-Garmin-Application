@@ -6,9 +6,18 @@ import Toybox.Lang;
 class HoleCountPickerDelegate extends WatchUi.BehaviorDelegate {
     var pickerView;
 
-    function initialize(view as HoleCountPickerView) {
+    // The course picker we came from, kept alive rather than rebuilt: its
+    // constructor loads every course resource just to read the preview
+    // metadata, so a fresh one is expensive.
+    var coursePickerView as CoursePickerView;
+    var coursePickerDelegate as CoursePickerDelegate;
+
+    function initialize(view as HoleCountPickerView, cView as CoursePickerView,
+                        cDelegate as CoursePickerDelegate) {
         BehaviorDelegate.initialize();
         pickerView = view;
+        coursePickerView = cView;
+        coursePickerDelegate = cDelegate;
     }
 
     function onNextPage() {
@@ -41,16 +50,17 @@ class HoleCountPickerDelegate extends WatchUi.BehaviorDelegate {
         model.startGps();
         model.startRecording();
 
-        var holeView = new HoleView(model);
+        var holeView = new HoleView(model, coursePickerView, coursePickerDelegate);
         var summaryView = new SummaryView(model);
         var delegate = new GolfDelegate(model, holeView, summaryView);
 
         WatchUi.switchToView(holeView, delegate, WatchUi.SLIDE_LEFT);
     }
 
-    // BACK: return to course picker
+    // BACK: return to course picker. switchToView rather than popView because
+    // this screen replaced the picker instead of stacking on top of it.
     function onBack() {
-        WatchUi.popView(WatchUi.SLIDE_RIGHT);
+        WatchUi.switchToView(coursePickerView, coursePickerDelegate, WatchUi.SLIDE_RIGHT);
         return true;
     }
 
