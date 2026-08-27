@@ -22,6 +22,7 @@ This is a hobby project designed for Garmin Forerunner 165 that turns your watch
 * **Shot Data Export**: All shot positions and scores are stored in the FIT activity file and can be extracted with the included Python script.
 * **Multiple Courses**: Browse and select from multiple courses on the watch.
 * **Summary Page**: Shows total strokes, score to par and course par after the last hole.
+* **Round Menu**: Hold the up button at any point to save and exit, discard the round or resume playing. A discarded round is never written to Garmin Connect.
 
 ## Usage
 
@@ -38,6 +39,7 @@ This is a hobby project designed for Garmin Forerunner 165 that turns your watch
 2. Press the **back button** to undo the last stroke (confirmation dialog).
 3. Swipe **down** or use **down button** to move to the next hole.
 4. Swipe **up** or use **up button** to go back to a previous hole.
+5. **Hold up** to open the round menu: **Save & exit**, **Discard** (confirmation dialog) or **Resume**.
 
 <img src="pictures/instructions.png" alt="How to start round" width="800">
 
@@ -46,6 +48,7 @@ This is a hobby project designed for Garmin Forerunner 165 that turns your watch
 1. After swiping past hole 18, the summary page is shown.
 2. Press the **start button** to finish the round (confirmation dialog).
 3. Press **up** to go back to the last hole if you need to make changes.
+4. **Hold up** to open the round menu here as well.
 
 ## Adding a New Course
 
