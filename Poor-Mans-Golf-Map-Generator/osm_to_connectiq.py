@@ -97,6 +97,48 @@ def centroid(p):
         return [0, 0]
     return [sum(x[0] for x in p)/len(p), sum(x[1] for x in p)/len(p)]
 
+def green_reference_points(green, tee, pin):
+    """Front, centre and back of the green along the tee->pin axis.
+
+    Returns three [lat, lon] points at *1e5 scale. gc is the green's own
+    centre; gf and gb sit on the tee->pin axis line through gc, at the
+    green's nearest and furthest extent along that axis.
+    """
+    ring = green[:-1] if green[0] == green[-1] else green
+    gc = centroid(ring)
+
+    k = math.cos(math.radians(gc[0] / 100000.0))
+
+    def xy(p):
+        return (p[1] * k, p[0])
+
+    tee_x, tee_y = xy(tee)
+    pin_x, pin_y = xy(pin)
+
+    ax, ay = pin_x - tee_x, pin_y - tee_y
+    length = math.hypot(ax, ay)
+    if length < 1e-9:
+        return gc, gc, gc
+    ax, ay = ax / length, ay / length
+
+    def along(p):
+        x, y = xy(p)
+        return (x - tee_x) * ax + (y - tee_y) * ay
+
+    ts = [along(v) for v in ring]
+    t_min, t_max = min(ts), max(ts)
+    t_c = along(gc)
+
+    gc_x, gc_y = xy(gc)
+
+    def at(t):
+        x = gc_x + (t - t_c) * ax
+        y = gc_y + (t - t_c) * ay
+        return [y, x / k]
+
+    return at(t_min), gc, at(t_max)
+
+
 
 def simplify_polygon(points, tol=0.00002):
     """
