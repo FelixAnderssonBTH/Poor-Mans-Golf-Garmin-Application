@@ -231,12 +231,9 @@ hidden function _drawBalls(dc, balls) {
         dc.fillCircle(p[0], p[1], 6);
     }
 
+    // The hole number and par are drawn by HoleView as shared chrome, so that
+    // every page carries them. Only the distance is the map's own.
     hidden function _drawInfo(dc, hole, distToPin) {
-        var topY = 24;
-        dc.setColor(COLOR_TEXT, Graphics.COLOR_TRANSPARENT);
-        var topText = "Hole " + hole["num"] + "  Par " + hole["par"];
-        dc.drawText(screenW / 2, topY, Graphics.FONT_SMALL, topText, Graphics.TEXT_JUSTIFY_CENTER);
-
         var botY = screenH - 48;
         dc.setColor(COLOR_TEXT, Graphics.COLOR_TRANSPARENT);
         var distText;

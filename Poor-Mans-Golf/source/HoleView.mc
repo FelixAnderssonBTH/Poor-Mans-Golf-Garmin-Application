@@ -2,15 +2,19 @@ import Toybox.Graphics;
 import Toybox.WatchUi;
 import Toybox.Lang;
 import Toybox.Timer;
+import Toybox.Math;
 
-// Renders the hole map via HoleRenderer, overlays score relative to par, and shows GPS status.
-// In free play (no pre-defined course) there is no map: it shows the hole number, a par
-// picker before the first shot, and the stroke count.
+// Owns the round's screen: the view lifecycle, the update timer, the GPS
+// lifecycle, and a small carousel of HolePage objects. It draws the shared
+// chrome -- hole number and par, hole score, running total, GPS status and the
+// page indicator -- around whatever the active page renders.
+//
+// Course play pages left to right: map, green distances.
+// Free play has a single page, so horizontal swipes are a natural no-op.
 
 class HoleView extends WatchUi.View {
     var model;
     var renderer;
-    var mapPage;
     var updateTimer;
 
     // Where Discard returns to. Held here rather than in the delegates because
@@ -19,6 +23,9 @@ class HoleView extends WatchUi.View {
     var pickerDelegate as CoursePickerDelegate;
 
     var freePlayPage;
+
+    hidden var _pages;
+    hidden var _pageIndex = 0;
 
     function initialize(golfModel as GolfModel, pView as CoursePickerView,
                         pDelegate as CoursePickerDelegate) {
@@ -32,8 +39,36 @@ class HoleView extends WatchUi.View {
         // renderer does not exist until here, so the page that needs it is
         // built here too rather than in initialize().
         renderer = new HoleRenderer(dc.getWidth(), dc.getHeight());
-        mapPage = new MapPage(renderer);
         freePlayPage = new FreePlayPage(model);
+
+        // Free play has no course geometry, so the green page would have
+        // nothing to show. A one-element array makes paging a no-op there
+        // without special-casing the input path.
+        if (model.isFreePlay()) {
+            _pages = [freePlayPage];
+        } else {
+            _pages = [new MapPage(renderer), new GreenPage()];
+        }
+        _pageIndex = 0;
+    }
+
+    // --- Page navigation, called by GolfDelegate ---
+
+    function nextPage() as Void {
+        _pageIndex = (_pageIndex + 1) % _pages.size();
+        WatchUi.requestUpdate();
+    }
+
+    function prevPage() as Void {
+        _pageIndex = (_pageIndex - 1 + _pages.size()) % _pages.size();
+        WatchUi.requestUpdate();
+    }
+
+    // A new hole means standing on a new tee, where the map is the orienting
+    // view -- so hole changes always land back on it.
+    function resetPage() as Void {
+        _pageIndex = 0;
+        WatchUi.requestUpdate();
     }
 
     function onShow() as Void {
@@ -86,11 +121,6 @@ class HoleView extends WatchUi.View {
     // A field read cannot be forwarded, so the delegate calls this instead
     function isEditingPar() as Boolean { return freePlayPage.editingPar; }
 
-    // Turns a score-vs-par diff into [text, color], shared by hole score and total score
-    hidden function _diffToText(diff) {
-        return diffToText(diff);
-    }
-
     function onUpdate(dc as Graphics.Dc) as Void {
         // Discarding: this view is briefly top-of-stack before onShow() switches
         // away, so it gets one paint. Fill it with the course picker's own
@@ -102,41 +132,79 @@ class HoleView extends WatchUi.View {
             return;
         }
 
-        if (model.isFreePlay()) {
-            freePlayPage.draw(dc, model);
-            return;
-        }
+        _pages[_pageIndex].draw(dc, model);
+        _drawChrome(dc);
+    }
 
-        mapPage.draw(dc, model);
-
-        // Score chrome below is shared by every page, so it stays in the view
-        // rather than moving into MapPage.
+    // Drawn over every page, so a stroke registered from any screen is visibly
+    // acknowledged. That matters: a player who presses START and sees nothing
+    // move will press again, and two strokes within a second is a known way to
+    // lose one from the FIT file.
+    hidden function _drawChrome(dc as Graphics.Dc) as Void {
+        var w = dc.getWidth();
+        var h = dc.getHeight();
         var hole = model.courseData.holes[model.currentHole];
 
-        // Only show score if hole has been started
+        // Hole number and par, top
+        dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 24, Graphics.FONT_SMALL,
+            "Hole " + hole["num"] + "  Par " + hole["par"], Graphics.TEXT_JUSTIFY_CENTER);
+
+        // Score for this hole, mid-left -- only once the hole has been started
         var strokes = model.scores[model.currentHole];
         if (strokes > 0) {
-            var par = hole["par"];
-            var diff = strokes - par;
-            var scoreInfo = _diffToText(diff);
-
+            var scoreInfo = diffToText(strokes - hole["par"]);
             dc.setColor(scoreInfo[1], Graphics.COLOR_TRANSPARENT);
-            dc.drawText(28, dc.getHeight() / 2 - 12, Graphics.FONT_MEDIUM,
+            dc.drawText(28, h / 2 - 12, Graphics.FONT_MEDIUM,
                 scoreInfo[0], Graphics.TEXT_JUSTIFY_CENTER);
         }
 
-        var totalDiff = model.totalToPar();
-        var totalInfo = _diffToText(totalDiff);
-
+        // Running total, mid-right
+        var totalInfo = diffToText(model.totalToPar());
         dc.setColor(totalInfo[1], Graphics.COLOR_TRANSPARENT);
-        dc.drawText(dc.getWidth() - 25, dc.getHeight() / 2 - 12, Graphics.FONT_MEDIUM,
+        dc.drawText(w - 25, h / 2 - 12, Graphics.FONT_MEDIUM,
             totalInfo[0], Graphics.TEXT_JUSTIFY_CENTER);
 
-        // Draw GPS status
-        if (!model.gpsActive || model.playerLat == 0) {
-            dc.setColor(0xFF4444, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(dc.getWidth() / 2, dc.getHeight() / 2, Graphics.FONT_TINY,
-                "Waiting for GPS...", Graphics.TEXT_JUSTIFY_CENTER);
+        // GPS status is drawn by the pages, not here: the map wants it centred,
+        // free play wants it at the bottom, and the green page says it already
+        // by showing dashes instead of distances.
+
+        _drawPageDots(dc, w, h);
+    }
+
+    // One dot per page, active one filled. Suppressed entirely when there is
+    // only one page, where a lone dot would mean nothing.
+    //
+    // Laid out along the bezel rather than in a straight row: the screen is
+    // round, so an arc follows its edge and stays clear of the map's centred
+    // distance readout. Centred on 4 o'clock, which is empty on every page.
+    hidden function _drawPageDots(dc as Graphics.Dc, w, h) as Void {
+        var count = _pages.size();
+        if (count < 2) { return; }
+
+        var cx = w / 2;
+        var cy = h / 2;
+        var radius = cx - 16;               // just inside the bezel
+
+        // Screen angles: 0 is 3 o'clock, positive runs clockwise because y
+        // grows downward. 30 degrees is 4 o'clock; 42 sits a little lower,
+        // further round the bezel and well clear of the distance readout.
+        var baseDeg = 42.0;
+        var stepDeg = 5.0;
+
+        for (var i = 0; i < count; i++) {
+            var deg = baseDeg + (i - (count - 1) / 2.0) * stepDeg;
+            var rad = deg * Math.PI / 180.0;
+            var x = cx + radius * Math.cos(rad);
+            var y = cy + radius * Math.sin(rad);
+
+            if (i == _pageIndex) {
+                dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
+                dc.fillCircle(x, y, 3);
+            } else {
+                dc.setColor(0x777777, Graphics.COLOR_TRANSPARENT);
+                dc.drawCircle(x, y, 3);
+            }
         }
     }
 }

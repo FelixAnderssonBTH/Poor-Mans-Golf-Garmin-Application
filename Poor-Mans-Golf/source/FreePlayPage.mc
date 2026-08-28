@@ -73,10 +73,8 @@ class FreePlayPage extends HolePage {
         dc.setColor(0x1A3A1A, 0x1A3A1A);
         dc.clear();
 
-        // Hole number at the top
-        dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 24, Graphics.FONT_SMALL,
-            "Hole " + hole["num"], Graphics.TEXT_JUSTIFY_CENTER);
+        // Hole number, par, score, total and GPS status are drawn by HoleView
+        // as shared chrome around every page -- do not repeat them here.
 
         if (parPickerActive()) {
             // Par picker: before the first shot, or re-opened with a long press on BACK
@@ -91,29 +89,10 @@ class FreePlayPage extends HolePage {
         } else {
             var strokes = model.scores[model.currentHole];
 
-            // Par for this hole
-            dc.setColor(0xAAAAAA, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h / 2 - 55, Graphics.FONT_TINY,
-                "Par " + hole["par"], Graphics.TEXT_JUSTIFY_CENTER);
-
             // Stroke count, big
             dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
             dc.drawText(w / 2, h / 2 - 30, Graphics.FONT_NUMBER_MEDIUM,
                 strokes.toString(), Graphics.TEXT_JUSTIFY_CENTER);
-
-            // Score for this hole
-            if (strokes > 0) {
-                var scoreInfo = diffToText(strokes - hole["par"]);
-                dc.setColor(scoreInfo[1], Graphics.COLOR_TRANSPARENT);
-                dc.drawText(36, h / 2 - 12, Graphics.FONT_MEDIUM,
-                    scoreInfo[0], Graphics.TEXT_JUSTIFY_CENTER);
-            }
-
-            // Running total for the round
-            var totalInfo = diffToText(model.totalToPar());
-            dc.setColor(totalInfo[1], Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w - 36, h / 2 - 12, Graphics.FONT_MEDIUM,
-                totalInfo[0], Graphics.TEXT_JUSTIFY_CENTER);
 
             // GPS status at the bottom
             if (!model.gpsActive || model.playerLat == 0) {

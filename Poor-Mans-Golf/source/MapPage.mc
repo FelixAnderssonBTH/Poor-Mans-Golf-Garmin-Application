@@ -20,5 +20,11 @@ class MapPage extends HolePage {
         var displayDist = model.getDisplayDistance();
 
         _renderer.draw(dc, hole, model.playerLat, model.playerLon, displayDist, balls);
+
+        if (!model.gpsActive || model.playerLat == 0) {
+            dc.setColor(0xFF4444, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(dc.getWidth() / 2, dc.getHeight() / 2, Graphics.FONT_TINY,
+                "Waiting for GPS...", Graphics.TEXT_JUSTIFY_CENTER);
+        }
     }
 }
