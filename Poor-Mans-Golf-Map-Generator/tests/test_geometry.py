@@ -70,3 +70,24 @@ def test_degenerate_axis_returns_the_centre_three_times():
     """Guards against dividing by a zero-length axis when tee == pin."""
     gf, gc, gb = green_reference_points(GREEN_RECT, PIN, PIN)
     assert gf == gc == gb
+
+def test_reference_points_are_ordered_along_the_axis():
+    """The ordering invariant that catches a sign error in the projection.
+    Runs against whatever course JSON this branch ships."""
+    import json
+    from pathlib import Path
+
+    course = (Path(__file__).resolve().parents[2] / "Poor-Mans-Golf" /
+              "resources" / "JsonData" / "course_trummenas.json")
+    holes = json.loads(course.read_text())["holes"]
+
+    checked = 0
+    for hole in holes:
+        if "green" not in hole:
+            continue
+        assert "gf" in hole and "gc" in hole and "gb" in hole, f"hole {hole['num']}"
+        tee = hole["tee"]
+        d = lambda p: math.hypot(p[0] - tee[0], p[1] - tee[1])
+        assert d(hole["gf"]) < d(hole["gc"]) < d(hole["gb"]), f"hole {hole['num']}"
+        checked += 1
+    assert checked == 18
