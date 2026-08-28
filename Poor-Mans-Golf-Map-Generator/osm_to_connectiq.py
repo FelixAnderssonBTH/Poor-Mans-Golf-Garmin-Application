@@ -181,7 +181,7 @@ class OSMGolfParser:
                     self.bunkers.append(pts)
                 elif g == "tee":
                     self.tees.append(pts)
-                elif g == "water_hazard":
+                elif g in ("water_hazard", "lateral_water_hazard", "penalty_area"):
                     self.water.append(pts)
 
         self.holes.sort(key=lambda h: h["ref"])
