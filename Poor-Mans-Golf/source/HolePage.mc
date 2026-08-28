@@ -15,3 +15,16 @@ class HolePage {
     function draw(dc as Graphics.Dc, model as GolfModel) as Void {
     }
 }
+
+
+// Turns a score-vs-par diff into [text, color]. Module-level so both the
+// shared chrome in HoleView and the pages can use one implementation.
+function diffToText(diff) {
+    if (diff < 0) {
+        return [diff.toString(), 0x44BBFF];
+    } else if (diff == 0) {
+        return ["E", 0xFFFFFF];
+    } else {
+        return ["+" + diff, 0xFF6644];
+    }
+}

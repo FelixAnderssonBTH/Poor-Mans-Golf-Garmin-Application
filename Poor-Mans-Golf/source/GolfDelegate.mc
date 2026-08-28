@@ -37,7 +37,7 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
     // Can the par of the current hole be edited right now?
     hidden function _canEditPar() as Boolean {
         return (!model.roundFinished && model.isFreePlay()
-                && !model.needsParSelection() && !holeView.editingPar);
+                && !model.needsParSelection() && !holeView.isEditingPar());
     }
 
     // Swipe up / UP button: previous hole (or previous par option)
@@ -123,7 +123,7 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
         }
         if (_inParPicker()) {
             // Cancel an in-progress par edit, otherwise nothing to undo yet
-            if (holeView.editingPar) {
+            if (holeView.isEditingPar()) {
                 holeView.cancelParEdit();
             }
             return true;

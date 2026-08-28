@@ -18,12 +18,7 @@ class HoleView extends WatchUi.View {
     var pickerView as CoursePickerView;
     var pickerDelegate as CoursePickerDelegate;
 
-    // Par options offered in free play
-    var parOptions = [5, 4, 3];
-    var parIndex = 1;   // default par 4
-
-    // True when the player re-opened the par picker mid-hole (long press BACK)
-    var editingPar = false;
+    var freePlayPage;
 
     function initialize(golfModel as GolfModel, pView as CoursePickerView,
                         pDelegate as CoursePickerDelegate) {
@@ -38,6 +33,7 @@ class HoleView extends WatchUi.View {
         // built here too rather than in initialize().
         renderer = new HoleRenderer(dc.getWidth(), dc.getHeight());
         mapPage = new MapPage(renderer);
+        freePlayPage = new FreePlayPage(model);
     }
 
     function onShow() as Void {
@@ -71,57 +67,28 @@ class HoleView extends WatchUi.View {
         WatchUi.requestUpdate();
     }
 
-    // --- Par picker helpers (free play only) ---
+    // --- Par picker forwarders (free play only) ---
+    // The state lives on FreePlayPage, which is the only thing that draws it.
+    // These keep GolfDelegate talking to the view rather than reaching through it.
 
-    function nextPar() as Void {
-        parIndex = (parIndex + 1) % parOptions.size();
-        WatchUi.requestUpdate();
-    }
+    function nextPar() as Void { freePlayPage.nextPar(); }
 
-    function prevPar() as Void {
-        parIndex = (parIndex - 1 + parOptions.size()) % parOptions.size();
-        WatchUi.requestUpdate();
-    }
+    function prevPar() as Void { freePlayPage.prevPar(); }
 
-    function confirmPar() as Void {
-        model.setCurrentHolePar(parOptions[parIndex]);
-        editingPar = false;
-        parIndex = 1;   // reset default for the next hole
-    }
+    function confirmPar() as Void { freePlayPage.confirmPar(); }
 
-    // Long press BACK on a hole that already has a par: re-open the picker
-    function openParEdit() as Void {
-        var current = model.courseData.holes[model.currentHole]["par"];
-        parIndex = 1;
-        for (var i = 0; i < parOptions.size(); i++) {
-            if (parOptions[i] == current) {
-                parIndex = i;
-            }
-        }
-        editingPar = true;
-        WatchUi.requestUpdate();
-    }
+    function openParEdit() as Void { freePlayPage.openParEdit(); }
 
-    function cancelParEdit() as Void {
-        editingPar = false;
-        parIndex = 1;
-        WatchUi.requestUpdate();
-    }
+    function cancelParEdit() as Void { freePlayPage.cancelParEdit(); }
 
-    // The par picker is shown either before the first shot, or when re-editing
-    function parPickerActive() as Boolean {
-        return model.needsParSelection() || editingPar;
-    }
+    function parPickerActive() as Boolean { return freePlayPage.parPickerActive(); }
+
+    // A field read cannot be forwarded, so the delegate calls this instead
+    function isEditingPar() as Boolean { return freePlayPage.editingPar; }
 
     // Turns a score-vs-par diff into [text, color], shared by hole score and total score
     hidden function _diffToText(diff) {
-        if (diff < 0) {
-            return [diff.toString(), 0x44BBFF];
-        } else if (diff == 0) {
-            return ["E", 0xFFFFFF];
-        } else {
-            return ["+" + diff, 0xFF6644];
-        }
+        return diffToText(diff);
     }
 
     function onUpdate(dc as Graphics.Dc) as Void {
@@ -136,7 +103,7 @@ class HoleView extends WatchUi.View {
         }
 
         if (model.isFreePlay()) {
-            _drawFreePlay(dc);
+            freePlayPage.draw(dc, model);
             return;
         }
 
@@ -170,71 +137,6 @@ class HoleView extends WatchUi.View {
             dc.setColor(0xFF4444, Graphics.COLOR_TRANSPARENT);
             dc.drawText(dc.getWidth() / 2, dc.getHeight() / 2, Graphics.FONT_TINY,
                 "Waiting for GPS...", Graphics.TEXT_JUSTIFY_CENTER);
-        }
-    }
-
-    // Free play screen: no map, just hole number, par and strokes
-    hidden function _drawFreePlay(dc as Graphics.Dc) as Void {
-        var w = dc.getWidth();
-        var h = dc.getHeight();
-        var hole = model.courseData.holes[model.currentHole];
-
-        dc.setColor(0x1A3A1A, 0x1A3A1A);
-        dc.clear();
-
-        // Hole number at the top
-        dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 24, Graphics.FONT_SMALL,
-            "Hole " + hole["num"], Graphics.TEXT_JUSTIFY_CENTER);
-
-        if (parPickerActive()) {
-            // Par picker: before the first shot, or re-opened with a long press on BACK
-            dc.setColor(0xAAAAAA, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h / 2 - 50, Graphics.FONT_TINY,
-                editingPar ? "Change par" : "Select par", Graphics.TEXT_JUSTIFY_CENTER);
-
-            dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h / 2 - 22, Graphics.FONT_NUMBER_MEDIUM,
-                parOptions[parIndex].toString(), Graphics.TEXT_JUSTIFY_CENTER);
-
-            
-        } else {
-            var strokes = model.scores[model.currentHole];
-
-            // Par for this hole
-            dc.setColor(0xAAAAAA, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h / 2 - 55, Graphics.FONT_TINY,
-                "Par " + hole["par"], Graphics.TEXT_JUSTIFY_CENTER);
-
-            // Stroke count, big
-            dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h / 2 - 30, Graphics.FONT_NUMBER_MEDIUM,
-                strokes.toString(), Graphics.TEXT_JUSTIFY_CENTER);
-
-            // Score for this hole
-            if (strokes > 0) {
-                var scoreInfo = _diffToText(strokes - hole["par"]);
-                dc.setColor(scoreInfo[1], Graphics.COLOR_TRANSPARENT);
-                dc.drawText(36, h / 2 - 12, Graphics.FONT_MEDIUM,
-                    scoreInfo[0], Graphics.TEXT_JUSTIFY_CENTER);
-            }
-
-            // Running total for the round
-            var totalInfo = _diffToText(model.totalToPar());
-            dc.setColor(totalInfo[1], Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w - 36, h / 2 - 12, Graphics.FONT_MEDIUM,
-                totalInfo[0], Graphics.TEXT_JUSTIFY_CENTER);
-
-            // GPS status at the bottom
-            if (!model.gpsActive || model.playerLat == 0) {
-                dc.setColor(0xFF4444, Graphics.COLOR_TRANSPARENT);
-                dc.drawText(w / 2, h - 60, Graphics.FONT_TINY,
-                    "Waiting for GPS...", Graphics.TEXT_JUSTIFY_CENTER);
-            } else {
-                dc.setColor(0x66CC66, Graphics.COLOR_TRANSPARENT);
-                dc.drawText(w / 2, h - 45, Graphics.FONT_TINY,
-                    "GPS ok", Graphics.TEXT_JUSTIFY_CENTER);
-            }
         }
     }
 }
