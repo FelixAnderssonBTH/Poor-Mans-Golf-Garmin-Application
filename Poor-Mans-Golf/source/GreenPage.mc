@@ -31,9 +31,23 @@ class GreenPage extends HolePage {
         dc.setColor(COLOR_BG, COLOR_BG);
         dc.clear();
 
-        // The converter omits gf/gc/gb when a hole has no green, and
-        // _updateDistances leaves them at -1.0. Say so plainly rather than
-        // showing three dashes, which would read as a GPS problem.
+        // Order matters here. _updateDistances returns early when there is no
+        // fix, leaving all three distances at their initial -1.0 -- so testing
+        // the data first would report a missing green for what is really a
+        // missing fix. They mean opposite things: no fix is transient and
+        // resolves itself, no green is a permanent property of the hole.
+
+        // No fix yet. Same wording as the map page, so the two screens never
+        // describe the same state differently.
+        if (model.playerLat == 0 || !model.gpsActive) {
+            dc.setColor(COLOR_WARN, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(w / 2, h / 2 - 10, Graphics.FONT_TINY,
+                "Waiting for GPS...", Graphics.TEXT_JUSTIFY_CENTER);
+            return;
+        }
+
+        // The hole genuinely has no green in the course file: the converter
+        // omits gf/gc/gb when it could not match one.
         if (model.distCentre < 0) {
             dc.setColor(COLOR_WARN, Graphics.COLOR_TRANSPARENT);
             dc.drawText(w / 2, h / 2 - 10, Graphics.FONT_TINY,
@@ -41,7 +55,7 @@ class GreenPage extends HolePage {
             return;
         }
 
-        var hasFix = (model.playerLat != 0);
+        var hasFix = true;   // guaranteed by the check above
 
         var smallH = dc.getFontHeight(Graphics.FONT_MEDIUM);
         var bigH = dc.getFontHeight(Graphics.FONT_NUMBER_MEDIUM);
