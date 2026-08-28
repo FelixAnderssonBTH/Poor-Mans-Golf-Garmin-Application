@@ -10,6 +10,7 @@ import Toybox.Timer;
 class HoleView extends WatchUi.View {
     var model;
     var renderer;
+    var mapPage;
     var updateTimer;
 
     // Where Discard returns to. Held here rather than in the delegates because
@@ -33,7 +34,10 @@ class HoleView extends WatchUi.View {
     }
 
     function onLayout(dc as Graphics.Dc) as Void {
+        // renderer does not exist until here, so the page that needs it is
+        // built here too rather than in initialize().
         renderer = new HoleRenderer(dc.getWidth(), dc.getHeight());
+        mapPage = new MapPage(renderer);
     }
 
     function onShow() as Void {
@@ -136,12 +140,11 @@ class HoleView extends WatchUi.View {
             return;
         }
 
-        var hole = model.courseData.holes[model.currentHole];
-        var holeIsFinished = (model.scores[model.currentHole] > 0 && model.currentHole < model._getLastPlayedHole());
-        var balls = model.getBallPositions(model.currentHole, holeIsFinished);
-        var displayDist = model.getDisplayDistance();
+        mapPage.draw(dc, model);
 
-        renderer.draw(dc, hole, model.playerLat, model.playerLon, displayDist, balls);
+        // Score chrome below is shared by every page, so it stays in the view
+        // rather than moving into MapPage.
+        var hole = model.courseData.holes[model.currentHole];
 
         // Only show score if hole has been started
         var strokes = model.scores[model.currentHole];
