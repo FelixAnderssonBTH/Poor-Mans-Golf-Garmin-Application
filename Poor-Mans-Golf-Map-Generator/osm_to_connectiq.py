@@ -306,6 +306,19 @@ class OSMGolfParser:
             }
             if green_s:
                 h["green"] = [[to_int(p[0]), to_int(p[1])] for p in green_s]
+                # Reference points come from the *unsimplified* green: the
+                # simplification exists to shrink what the watch draws, so
+                # there is no reason to lose the extremes to it.
+                # green/tee_pos/pin_pos are in degrees here; green_reference_points
+                # works at the *1e5 scale the JSON stores, so convert on the way in.
+                gf, gc, gb = green_reference_points(
+                    [[to_int(p[0]), to_int(p[1])] for p in green],
+                    [to_int(tee_pos[0]), to_int(tee_pos[1])],
+                    [to_int(pin_pos[0]), to_int(pin_pos[1])],
+                )
+                h["gf"] = [round(gf[0]), round(gf[1])]
+                h["gc"] = [round(gc[0]), round(gc[1])]
+                h["gb"] = [round(gb[0]), round(gb[1])]
             if hole_fw:
                 h["fw"] = [[[to_int(p[0]), to_int(p[1])] for p in fw] for fw in hole_fw]
             if hole_bk:
