@@ -21,6 +21,13 @@ class GolfModel {
     var gpsActive = false;
     var distToPin = -1.0;
 
+    // Distances to the front, centre and back of the green, in metres.
+    // -1.0 means unavailable: free play, no GPS fix yet, or a hole whose
+    // green was too far from the pin for the converter to export one.
+    var distFront = -1.0;
+    var distCentre = -1.0;
+    var distBack = -1.0;
+
     // Activity recording
     var session;
 
@@ -178,21 +185,42 @@ class GolfModel {
             playerLat = (degrees[0] * 100000).toNumber();
             playerLon = (degrees[1] * 100000).toNumber();
 
-            _updateDistToPin();
+            _updateDistances();
 
             WatchUi.requestUpdate();
         }
     }
 
     // No pin exists in free play, so distance to pin is not available there
-    hidden function _updateDistToPin() as Void {
+    hidden function _updateDistances() as Void {
         if (isFreePlay()) {
             distToPin = -1.0;
+            distFront = -1.0;
+            distCentre = -1.0;
+            distBack = -1.0;
             return;
         }
         if (playerLat == 0) { return; }
         var hole = courseData.holes[currentHole];
         distToPin = _calcDistance(playerLat, playerLon, hole["pin"][0], hole["pin"][1]);
+
+        // gf/gc/gb are optional: the converter omits them when the hole has
+        // no green, so each one is guarded separately.
+        if (hole.hasKey("gf")) {
+            distFront = _calcDistance(playerLat, playerLon, hole["gf"][0], hole["gf"][1]);
+        } else {
+            distFront = -1.0;
+        }
+        if (hole.hasKey("gc")) {
+            distCentre = _calcDistance(playerLat, playerLon, hole["gc"][0], hole["gc"][1]);
+        } else {
+            distCentre = -1.0;
+        }
+        if (hole.hasKey("gb")) {
+            distBack = _calcDistance(playerLat, playerLon, hole["gb"][0], hole["gb"][1]);
+        } else {
+            distBack = -1.0;
+        }
     }
 
     // Add a stroke: record where the player is standing
@@ -317,7 +345,7 @@ class GolfModel {
             }
         }
 
-        _updateDistToPin();
+        _updateDistances();
         WatchUi.requestUpdate();
     }
 
@@ -335,7 +363,7 @@ class GolfModel {
                 holeNumRecordField.setData(courseData.holes[currentHole]["num"]);
             }
         }
-        _updateDistToPin();
+        _updateDistances();
         WatchUi.requestUpdate();
     }
 

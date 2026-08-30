@@ -4,7 +4,8 @@ import Toybox.Timer;
 import Toybox.System;
 
 //  Input handler for the round. START registers a stroke, BACK undoes it,
-//  UP/DOWN move between holes. In free play, when a hole has no par chosen yet,
+//  UP/DOWN move between holes, and left/right swipes page between the screens
+//  of the current hole. In free play, when a hole has no par chosen yet,
 //  UP/DOWN pick the par and START confirms it. Holding BACK on a free play hole
 //  re-opens the par picker; on devices that don't report a held BACK, the menu
 //  (long press UP) offers the same thing.
@@ -37,7 +38,7 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
     // Can the par of the current hole be edited right now?
     hidden function _canEditPar() as Boolean {
         return (!model.roundFinished && model.isFreePlay()
-                && !model.needsParSelection() && !holeView.editingPar);
+                && !model.needsParSelection() && !holeView.isEditingPar());
     }
 
     // Swipe up / UP button: previous hole (or previous par option)
@@ -49,9 +50,11 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
         if (model.roundFinished) {
             // Go back to last hole from summary
             model.prevHole();
+            holeView.resetPage();
             WatchUi.switchToView(holeView, self, WatchUi.SLIDE_RIGHT);
         } else {
             model.prevHole();
+            holeView.resetPage();
         }
         return true;
     }
@@ -64,11 +67,33 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
         }
         var wasFinished = model.roundFinished;
         model.nextHole();
+        holeView.resetPage();
         if (model.roundFinished && !wasFinished) {
             // Just moved past last hole -> show summary
             WatchUi.switchToView(summaryView, self, WatchUi.SLIDE_LEFT);
         }
         return true;
+    }
+
+    // Swipe left cycles forward through the pages of the current hole, wrapping
+    // at the end.
+    //
+    // Only left. This device delivers SWIPE_RIGHT as the Back behavior, so it
+    // reaches onBack() and never arrives here -- binding it to prevPage() gave
+    // an "Undo stroke?" dialog instead of a page change. onBack cannot tell a
+    // swipe from a button press, so the direction cannot be reclaimed.
+    //
+    // Vertical swipes MUST fall through. BehaviorDelegate maps SWIPE_UP to
+    // onNextPage and SWIPE_DOWN to onPreviousPage, which is how swiping already
+    // changes hole with no swipe-specific code. onSwipe is consulted first, so
+    // returning true unconditionally here would swallow those and silently
+    // break hole navigation, leaving only the UP/DOWN buttons working.
+    function onSwipe(evt) {
+        if (evt.getDirection() == WatchUi.SWIPE_LEFT) {
+            holeView.nextPage();
+            return true;
+        }
+        return false;
     }
 
     // BACK pressed down: start the hold timer
@@ -123,7 +148,7 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
         }
         if (_inParPicker()) {
             // Cancel an in-progress par edit, otherwise nothing to undo yet
-            if (holeView.editingPar) {
+            if (holeView.isEditingPar()) {
                 holeView.cancelParEdit();
             }
             return true;
