@@ -11,6 +11,9 @@ This is a hobby project designed for Garmin Forerunner 165 that turns your watch
   </tr>
 </table>
 
+## Installation youtube video
+[![Video title](https://img.youtube.com/vi/sUPVYjwbZzE/0.jpg)](https://www.youtube.com/watch?v=sUPVYjwbZzE)
+
 ## Features
 
 * **Course Map**: Displays each hole with fairways, greens, bunkers, water hazards, tee boxes and pins. The map is rotated so the tee is always at the bottom and the pin is always at the top.
