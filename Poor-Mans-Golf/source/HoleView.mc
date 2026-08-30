@@ -12,6 +12,11 @@ class HoleView extends WatchUi.View {
     var renderer;
     var updateTimer;
 
+    // Where Discard returns to. Held here rather than in the delegates because
+    // the switch has to happen from onShow() -- see the note there.
+    var pickerView as CoursePickerView;
+    var pickerDelegate as CoursePickerDelegate;
+
     // Par options offered in free play
     var parOptions = [5, 4, 3];
     var parIndex = 1;   // default par 4
@@ -19,9 +24,12 @@ class HoleView extends WatchUi.View {
     // True when the player re-opened the par picker mid-hole (long press BACK)
     var editingPar = false;
 
-    function initialize(golfModel as GolfModel) {
+    function initialize(golfModel as GolfModel, pView as CoursePickerView,
+                        pDelegate as CoursePickerDelegate) {
         View.initialize();
         model = golfModel;
+        pickerView = pView;
+        pickerDelegate = pDelegate;
     }
 
     function onLayout(dc as Graphics.Dc) as Void {
@@ -29,6 +37,17 @@ class HoleView extends WatchUi.View {
     }
 
     function onShow() as Void {
+        // The round was discarded from the confirmation dialog. That dialog is
+        // popped by the system *after* onResponse() returns, so a switchToView()
+        // in onResponse gets thrown away with it -- Garmin's ConfirmationDialog
+        // sample sets state there and lets the revealed view act, which is this.
+        // Returning early also matters: the GPS restart below would otherwise
+        // undo the stopGps() that discardAndStop() just did.
+        if (model.roundDiscarded) {
+            WatchUi.switchToView(pickerView, pickerDelegate, WatchUi.SLIDE_IMMEDIATE);
+            return;
+        }
+
         // Ensure GPS is running when view is shown
         if (!model.gpsActive) {
             model.startGps();
@@ -102,6 +121,16 @@ class HoleView extends WatchUi.View {
     }
 
     function onUpdate(dc as Graphics.Dc) as Void {
+        // Discarding: this view is briefly top-of-stack before onShow() switches
+        // away, so it gets one paint. Fill it with the course picker's own
+        // background instead of the hole, so that frame blends into where we are
+        // heading rather than flashing the round the player just abandoned.
+        if (model.roundDiscarded) {
+            dc.setColor(0x222222, 0x222222);
+            dc.clear();
+            return;
+        }
+
         if (model.isFreePlay()) {
             _drawFreePlay(dc);
             return;

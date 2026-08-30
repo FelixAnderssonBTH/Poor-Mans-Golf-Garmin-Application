@@ -37,6 +37,11 @@ class GolfModel {
 
     var roundFinished = false;
 
+
+    // Set by discardAndStop() so HoleView.onShow() knows to leave the round
+
+    var roundDiscarded = false;
+
     function initialize(course as CourseData) {
         courseData = course;
         scores = new [course.numHoles];
@@ -138,6 +143,23 @@ class GolfModel {
             session = null;
         }
         _saveShotData();
+        stopGps();
+    }
+
+    // Abandon the round: the FIT session is thrown away and nothing is written
+    // to Storage, so a misclicked or half-played round never reaches Garmin
+    // Connect and leaves no stale "last round" behind either. No closing lap is
+    // written -- the data is discarded anyway.
+    function discardAndStop() as Void {
+        roundDiscarded = true;
+        if (session != null) {
+            if (session.isRecording()) {
+                session.stop();
+            }
+            session.discard();
+            session = null;
+        }
+        stopGps();
     }
 
     function startGps() as Void {
