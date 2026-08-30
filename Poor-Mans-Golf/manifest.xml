@@ -3,6 +3,7 @@
     <iq:application id="3295e86f-e13a-41e7-bd8c-e609c57f52fc" type="watch-app" name="@Strings.AppName" entry="PoorMansGolfApp" launcherIcon="@Drawables.LauncherIcon" minApiLevel="5.2.0">
         <iq:products>
             <iq:product id="fr165m"/>
+            <iq:product id="fr165"/>
         </iq:products>
         <iq:permissions>
             <iq:uses-permission id="Positioning"/>
